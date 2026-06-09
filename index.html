@@ -596,20 +596,11 @@ function showMsg(msg, type) {
 }
 async function translateName(japaneseName) {
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 100,
-        messages: [{
-          role: "user",
-          content: `Übersetze diesen japanischen One Piece TCG Produktnamen ins Deutsche. Antworte NUR mit dem übersetzten Namen, ohne Erklärung oder Zusätze. Behalte Eigennamen (Charakternamen, Kartennummern, PSA/BGS/CGC Grades) unverändert.\n\n${japaneseName}`
-        }]
-      })
-    });
-    const data = await response.json();
-    const translated = data.content?.[0]?.text?.trim();
+    const url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=de&dt=t&q=" + encodeURIComponent(japaneseName);
+    const res = await fetch(url);
+    const data = await res.json();
+    // Response format: [[[translatedText, originalText], ...], ...]
+    const translated = data[0].map(chunk => chunk[0]).join("").trim();
     return translated || japaneseName;
   } catch {
     return japaneseName; // Fallback: Originalname
