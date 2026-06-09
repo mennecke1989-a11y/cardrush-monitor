@@ -114,7 +114,28 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .price-badge.price-down { background: var(--green-bg); color: var(--green-text); }
 .price-badge.price-up   { background: var(--red-bg); color: var(--red-text); }
 
-/* ── Watch item extended ── */
+/* ── Sort / Filter bar ── */
+.filter-bar {
+  display: flex; gap: 6px; padding: 8px 16px;
+  border-bottom: 1px solid var(--surface2); overflow-x: auto;
+  scrollbar-width: none; flex-shrink: 0; background: var(--bg);
+}
+.filter-bar::-webkit-scrollbar { display: none; }
+.filter-chip {
+  background: var(--surface2); border: 1px solid var(--border2);
+  color: var(--muted2); padding: 5px 11px; border-radius: 20px;
+  font-size: 12px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.filter-chip.active { background: var(--blue-bg); border-color: var(--blue); color: var(--blue2); }
+
+/* ── Cardmarket button ── */
+.cm-btn {
+  background: none; border: 1px solid #1e3a20; color: #4ade80;
+  padding: 3px 8px; border-radius: 6px; font-size: 11px;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.cm-btn:active { background: #14532d; }
 .watch-item-body { display: flex; align-items: center; gap: 8px; padding: 9px 0 4px; border-bottom: 1px solid #151a24; flex-wrap: wrap; }
 .watch-item-body:last-child { border-bottom: none; }
 .watch-item-actions { display: flex; align-items: center; gap: 6px; padding: 0 0 8px; border-bottom: 1px solid #151a24; }
@@ -328,8 +349,17 @@ canvas#price-chart { width: 100% !important; height: 180px !important; }
         <button class="add-btn" id="add-btn">＋</button>
       </div>
       <div id="status-msg" class="status-msg" style="display:none"></div>
+      <div class="filter-bar" id="filter-bar">
+        <div class="filter-chip active" data-filter="all">Alle</div>
+        <div class="filter-chip" data-filter="available">Verfügbar</div>
+        <div class="filter-chip" data-filter="sold_out">Ausverkauft</div>
+        <div class="filter-chip" data-filter="alarm">Mit Alarm</div>
+        <div class="filter-chip" data-sort="price_asc">Preis ↑</div>
+        <div class="filter-chip" data-sort="price_desc">Preis ↓</div>
+        <div class="filter-chip" data-sort="name">Name A–Z</div>
+      </div>
       <div class="section">
-        <div class="section-title">Beobachtete Produkte</div>
+        <div class="section-title" id="watch-count">Beobachtete Produkte</div>
         <div id="watch-list"><div class="empty-state">Noch keine Produkte beobachtet</div></div>
       </div>
       <div class="hint">URL einfügen oder nur die Produkt-Nummer.<br>Benachrichtigung bei Restock & Preisänderung.</div>
@@ -564,6 +594,18 @@ function priceItemHtml(p) {
     <span class="price-badge ${cheaper?"price-down":"price-up"}">¥${p.oldPrice}→¥${p.price} ${cheaper?"↓":"↑"}${pct}%</span>
   </div>`;
 }
+function cardmarketUrl(name) {
+  // Strip Japanese brackets/grades, keep meaningful search terms
+  const clean = name
+    .replace(/【[^】]*】/g, " ")
+    .replace(/〔[^〕]*〕/g, " ")
+    .replace(/[「」『』()（）]/g, " ")
+    .replace(/PSA\d+|BGS\d+|CGC\d+/gi, "")
+    .replace(/鑑定済|パラレル|シークレット|スーパーレア|ウルトラレア/g, "")
+    .trim().replace(/\s+/g, " ");
+  return "https://www.cardmarket.com/en/OnePiece/Products/Search?searchString=" + encodeURIComponent(clean);
+}
+
 function watchItemHtml(p) {
   const dot = p.inStock ? "green" : "red";
   const tag = p.inStock
@@ -590,8 +632,24 @@ function watchItemHtml(p) {
     <div class="watch-item-actions">
       <button class="chart-btn" data-chart="${esc(p.url)}">📈 Verlauf</button>
       <button class="${alarmClass}" data-alarm="${esc(p.url)}">${alarmLabel}</button>
+      <a class="cm-btn" href="${esc(cardmarketUrl(p.name))}" target="_blank">🛒 CM</a>
     </div>
   </div>`;
+}
+
+// ── Sort / Filter state ───────────────────────────────────────────────────────
+let activeFilter = "all";
+let activeSort = null;
+
+function applyFilterSort(watchlist) {
+  let list = [...(watchlist || [])];
+  if (activeFilter === "available")  list = list.filter(x => x.inStock);
+  if (activeFilter === "sold_out")   list = list.filter(x => !x.inStock);
+  if (activeFilter === "alarm")      list = list.filter(x => x.priceAlarm);
+  if (activeSort === "price_asc")    list.sort((a,b) => (a.price||0) - (b.price||0));
+  if (activeSort === "price_desc")   list.sort((a,b) => (b.price||0) - (a.price||0));
+  if (activeSort === "name")         list.sort((a,b) => a.name.localeCompare(b.name));
+  return list;
 }
 
 // ── Load state ────────────────────────────────────────────────────────────────
@@ -606,11 +664,18 @@ async function loadState() {
   renderList("new-list",     newItems    || [], newItemHtml,     "Noch keine neuen Produkte");
   renderList("restock-list", restocks    || [], restockItemHtml, "Keine Restocks");
   renderList("price-list",   priceAlerts || [], priceItemHtml,   "Keine Preisänderungen");
-  renderList("watch-list",   watchlist   || [], watchItemHtml,   "Noch keine Produkte beobachtet");
 
-  const total = (newItems||[]).length + (restocks||[]).length + (priceAlerts||[]).length;
+  const filtered = applyFilterSort(watchlist);
+  renderList("watch-list", filtered, watchItemHtml, "Keine Produkte gefunden");
+
+  const total = (watchlist||[]).length;
+  const shown = filtered.length;
+  document.getElementById("watch-count").textContent =
+    total === shown ? `Beobachtete Produkte (${total})` : `Beobachtete Produkte (${shown} von ${total})`;
+
+  const alertTotal = (newItems||[]).length + (restocks||[]).length + (priceAlerts||[]).length;
   const ba = document.getElementById("badge-alerts");
-  ba.textContent = total; ba.style.display = total > 0 ? "inline-flex" : "none";
+  ba.textContent = alertTotal; ba.style.display = alertTotal > 0 ? "inline-flex" : "none";
 
   const outCount = (watchlist||[]).filter(x=>!x.inStock).length;
   const bw = document.getElementById("badge-watch");
@@ -777,6 +842,28 @@ async function removeWatch(url) {
   await dbSet("watchlist", list);
   await loadState();
 }
+
+// ── Filter / Sort chips ───────────────────────────────────────────────────────
+document.querySelectorAll(".filter-chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    if (chip.dataset.filter) {
+      activeFilter = chip.dataset.filter;
+      document.querySelectorAll(".filter-chip[data-filter]").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+    }
+    if (chip.dataset.sort) {
+      if (activeSort === chip.dataset.sort) {
+        activeSort = null;
+        chip.classList.remove("active");
+      } else {
+        activeSort = chip.dataset.sort;
+        document.querySelectorAll(".filter-chip[data-sort]").forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+      }
+    }
+    loadState();
+  });
+});
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 function updateNotifStatus() {
