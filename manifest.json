@@ -7,6 +7,14 @@
   "background_color": "#0f1117",
   "theme_color": "#0f1117",
   "orientation": "portrait",
+  "share_target": {
+    "action": "./index.html",
+    "method": "GET",
+    "params": {
+      "url": "shared_url",
+      "text": "shared_url"
+    }
+  },
   "icons": [
     { "src": "icons/icon48.png",  "sizes": "48x48",   "type": "image/png" },
     { "src": "icons/icon128.png", "sizes": "128x128", "type": "image/png" },
