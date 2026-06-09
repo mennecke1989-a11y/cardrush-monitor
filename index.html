@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0f1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CardRush">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon192.png">
+<title>CardRush Monitor</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+:root {
+  --bg: #0f1117; --surface: #13181f; --surface2: #1a1f2c;
+  --border: #1e2d42; --border2: #1c2130;
+  --text: #e8e6e0; --text2: #c8c4bc; --muted: #6b7a99; --muted2: #4b5563;
+  --blue: #3b82f6; --blue2: #60a5fa; --blue-bg: #1e3a5f;
+  --green: #22c55e; --green-bg: #14532d; --green-text: #86efac;
+  --red: #ef4444; --red-bg: #2d1a1a; --red-text: #f87171;
+  --amber: #f59e0b;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; overflow: hidden; }
+
+/* ── Layout ── */
+.app { display: flex; flex-direction: column; height: 100dvh; padding-top: var(--safe-top); }
+
+/* ── Header ── */
+.header {
+  background: var(--surface); padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.header-left { display: flex; align-items: center; gap: 10px; }
+.header-icon { font-size: 22px; }
+.header-title { font-size: 16px; font-weight: 700; color: #f0ece4; }
+.header-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.check-btn {
+  background: var(--blue); color: #fff; border: none;
+  padding: 8px 14px; border-radius: 8px; font-size: 13px;
+  cursor: pointer; font-weight: 600; transition: background .15s; flex-shrink: 0;
+}
+.check-btn:active { background: #1d4ed8; transform: scale(0.97); }
+.check-btn:disabled { background: #2a3448; color: var(--muted2); }
+
+/* ── Status bar ── */
+.status-bar {
+  background: #0d1118; padding: 6px 16px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--border2); flex-shrink: 0;
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0;
+       box-shadow: 0 0 5px #22c55e88; }
+.dot.checking { background: var(--amber); box-shadow: 0 0 5px #f59e0b88; animation: pulse .8s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+.last-check { font-size: 11px; color: var(--muted); flex: 1; }
+.notif-btn {
+  background: none; border: 1px solid var(--border2); color: var(--muted);
+  padding: 3px 8px; border-radius: 6px; font-size: 11px; cursor: pointer;
+}
+.notif-btn.granted { border-color: var(--green-bg); color: var(--green-text); }
+
+/* ── Tabs ── */
+.tabs { display: flex; border-bottom: 1px solid var(--border2); background: #0d1118; flex-shrink: 0; }
+.tab {
+  flex: 1; padding: 11px 4px; font-size: 12px; font-weight: 500;
+  color: var(--muted2); cursor: pointer; text-align: center;
+  border-bottom: 2px solid transparent; transition: all .15s; user-select: none; position: relative;
+}
+.tab.active { color: var(--blue2); border-bottom-color: var(--blue); }
+.tab-badge {
+  display: inline-flex; align-items: center;
+  background: #dc2626; color: #fff;
+  font-size: 9px; font-weight: 700;
+  padding: 1px 4px; border-radius: 8px; margin-left: 3px; vertical-align: middle;
+}
+
+/* ── Panels (scrollable) ── */
+.panels { flex: 1; overflow: hidden; position: relative; }
+.panel { display: none; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(16px + var(--safe-bottom)); }
+.panel.active { display: block; }
+
+/* ── Sections ── */
+.section { padding: 10px 16px; border-bottom: 1px solid var(--surface2); }
+.section-title {
+  font-size: 10px; font-weight: 700; color: var(--muted2);
+  text-transform: uppercase; letter-spacing: .7px; margin-bottom: 8px;
+}
+.product-item {
+  display: flex; align-items: center; padding: 9px 0;
+  border-bottom: 1px solid #151a24; gap: 8px;
+}
+.product-item:last-child { border-bottom: none; }
+.product-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); flex-shrink: 0; }
+.product-dot.green { background: var(--green); }
+.product-dot.red   { background: var(--red); }
+.product-name { font-size: 13px; color: var(--text2); flex: 1; line-height: 1.35; word-break: break-word; }
+.product-tag {
+  font-size: 10px; padding: 2px 6px; border-radius: 5px; flex-shrink: 0; font-weight: 600;
+}
+.tag-restock { background: var(--green-bg); color: var(--green-text); }
+.tag-new     { background: var(--blue-bg); color: #93c5fd; }
+.tag-out     { background: var(--red-bg); color: var(--red-text); }
+.tag-in      { background: var(--green-bg); color: var(--green-text); }
+.price-badge {
+  font-size: 11px; padding: 2px 6px; border-radius: 5px; flex-shrink: 0;
+  font-weight: 600; background: var(--surface2); color: var(--muted); white-space: nowrap;
+}
+.price-badge.price-down { background: var(--green-bg); color: var(--green-text); }
+.price-badge.price-up   { background: var(--red-bg); color: var(--red-text); }
+.empty-state { color: var(--muted2); font-size: 12px; text-align: center; padding: 20px 0; }
+
+/* ── Watchlist ── */
+.watch-form {
+  display: flex; gap: 8px; align-items: center; padding: 12px 16px;
+  border-bottom: 1px solid var(--surface2); flex-shrink: 0;
+}
+.watch-input {
+  flex: 1; background: var(--surface2); border: 1px solid #2a3448;
+  color: var(--text); padding: 9px 12px; border-radius: 8px;
+  font-size: 13px; outline: none; min-width: 0;
+}
+.watch-input:focus { border-color: var(--blue); }
+.watch-input::placeholder { color: var(--muted2); }
+.add-btn {
+  background: #166534; color: var(--green-text); border: none;
+  padding: 9px 14px; border-radius: 8px; font-size: 13px;
+  cursor: pointer; font-weight: 600; white-space: nowrap;
+}
+.add-btn:active { background: #15803d; }
+.add-btn:disabled { background: #2a3448; color: var(--muted2); }
+.watch-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 0; border-bottom: 1px solid #151a24;
+}
+.watch-item:last-child { border-bottom: none; }
+.watch-name {
+  flex: 1; font-size: 13px; color: var(--text2);
+  line-height: 1.35; word-break: break-word;
+}
+.remove-btn {
+  background: none; border: none; color: var(--muted2);
+  cursor: pointer; font-size: 18px; padding: 0 4px; line-height: 1; flex-shrink: 0;
+}
+.remove-btn:active { color: var(--red-text); }
+.status-msg { font-size: 12px; color: var(--muted); padding: 4px 16px 8px; text-align: center; }
+.status-msg.error { color: var(--red-text); }
+.status-msg.success { color: var(--green-text); }
+
+/* ── Links ── */
+.links-group { padding: 10px 16px; border-bottom: 1px solid var(--surface2); }
+.links-group-title {
+  font-size: 10px; font-weight: 700; color: var(--muted2);
+  text-transform: uppercase; letter-spacing: .7px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.links-group-title span { font-size: 14px; }
+.link-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.quick-link {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; cursor: pointer; text-decoration: none;
+}
+.quick-link:active { border-color: var(--blue); background: #161d2e; }
+.ql-icon { font-size: 18px; flex-shrink: 0; }
+.ql-name { font-size: 12px; font-weight: 600; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ql-sub { font-size: 10px; color: var(--muted2); white-space: nowrap; }
+
+/* ── Settings ── */
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--surface2);
+}
+.settings-label { font-size: 14px; color: var(--text2); }
+.settings-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.interval-select {
+  background: var(--surface2); border: 1px solid #2a3448;
+  color: var(--text); padding: 8px 10px; border-radius: 8px; font-size: 13px; outline: none;
+}
+.footer-actions { padding: 14px 16px; display: flex; gap: 8px; }
+.action-btn {
+  flex: 1; background: none; border: 1px solid #2a3448; color: var(--muted);
+  padding: 10px; border-radius: 8px; font-size: 12px; cursor: pointer;
+}
+.action-btn:active { border-color: var(--muted); color: var(--text2); }
+.action-btn.danger { border-color: var(--red-bg); color: var(--red-text); }
+
+/* ── Install banner ── */
+.install-banner {
+  background: #1a1f2c; border: 1px solid var(--blue-bg); border-radius: 10px;
+  margin: 12px 16px; padding: 12px 14px; display: none;
+  align-items: center; gap: 10px;
+}
+.install-banner.show { display: flex; }
+.install-text { flex: 1; font-size: 12px; color: var(--text2); line-height: 1.4; }
+.install-btn {
+  background: var(--blue); color: #fff; border: none;
+  padding: 8px 14px; border-radius: 7px; font-size: 12px;
+  cursor: pointer; font-weight: 600; white-space: nowrap;
+}
+
+/* ── Hint ── */
+.hint { font-size: 12px; color: var(--muted2); line-height: 1.6; padding: 10px 16px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <span class="header-icon">🃏</span>
+      <div>
+        <div class="header-title">CardRush Monitor</div>
+        <div class="header-sub">cardrush-op.jp · One Piece TCG</div>
+      </div>
+    </div>
+    <button class="check-btn" id="check-btn">Prüfen</button>
+  </div>
+
+  <!-- Status -->
+  <div class="status-bar">
+    <span class="dot" id="dot"></span>
+    <span class="last-check" id="last-check">Noch nicht geprüft</span>
+    <button class="notif-btn" id="notif-btn">🔔 Benachrichtigungen</button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="alerts" id="tab-alerts">
+      Alerts <span class="tab-badge" id="badge-alerts" style="display:none">0</span>
+    </div>
+    <div class="tab" data-tab="watch" id="tab-watch">
+      Watchlist <span class="tab-badge" id="badge-watch" style="display:none;background:#15803d">0</span>
+    </div>
+    <div class="tab" data-tab="links" id="tab-links">Links</div>
+    <div class="tab" data-tab="settings" id="tab-settings">⚙</div>
+  </div>
+
+  <!-- Panels -->
+  <div class="panels">
+
+    <!-- ALERTS TAB -->
+    <div class="panel active" id="panel-alerts">
+      <div id="install-banner" class="install-banner">
+        <div class="install-text">📲 App zum Homescreen hinzufügen für Benachrichtigungen im Hintergrund!</div>
+        <button class="install-btn" id="install-btn">Installieren</button>
+      </div>
+      <div class="section">
+        <div class="section-title">Neue Produkte</div>
+        <div id="new-list"><div class="empty-state">Noch keine neuen Produkte</div></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Wieder verfügbar</div>
+        <div id="restock-list"><div class="empty-state">Keine Restocks</div></div>
+      </div>
+      <div class="section">
+        <div class="section-title">Preisänderungen</div>
+        <div id="price-list"><div class="empty-state">Keine Preisänderungen</div></div>
+      </div>
+    </div>
+
+    <!-- WATCHLIST TAB -->
+    <div class="panel" id="panel-watch">
+      <div class="watch-form">
+        <input class="watch-input" id="watch-url" placeholder="cardrush-op.jp/product/… oder Zahl" inputmode="url" />
+        <button class="add-btn" id="add-btn">＋</button>
+      </div>
+      <div id="status-msg" class="status-msg" style="display:none"></div>
+      <div class="section">
+        <div class="section-title">Beobachtete Produkte</div>
+        <div id="watch-list"><div class="empty-state">Noch keine Produkte beobachtet</div></div>
+      </div>
+      <div class="hint">URL einfügen oder nur die Produkt-Nummer.<br>Benachrichtigung bei Restock & Preisänderung.</div>
+    </div>
+
+    <!-- LINKS TAB -->
+    <div class="panel" id="panel-links">
+      <div class="links-group">
+        <div class="links-group-title"><span>🏅</span> Graded Cards</div>
+        <div class="link-grid">
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list?keyword=%E3%80%94PSA10%E9%91%91%E5%AE%9A%E6%B8%88%E3%80%95" target="_blank">
+            <span class="ql-icon">🥇</span>
+            <div><div class="ql-name">PSA 10</div><div class="ql-sub">Gem Mint</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list?keyword=%E3%80%94PSA9%E9%91%91%E5%AE%9A%E6%B8%88%E3%80%95" target="_blank">
+            <span class="ql-icon">🥈</span>
+            <div><div class="ql-name">PSA 9</div><div class="ql-sub">Mint</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list?keyword=BGS" target="_blank">
+            <span class="ql-icon">💎</span>
+            <div><div class="ql-name">BGS Beckett</div><div class="ql-sub">Alle Grade</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list?keyword=CGC%E9%91%91%E5%AE%9A%E6%B8%88" target="_blank">
+            <span class="ql-icon">🔖</span>
+            <div><div class="ql-name">CGC</div><div class="ql-sub">Certified</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list?keyword=%E3%80%94PSA10%E9%91%91%E5%AE%9A%E6%B8%88%E3%80%95%E3%80%80%E7%8A%B6%E6%85%8B%E9%9B%A3" target="_blank">
+            <span class="ql-icon">⚠️</span>
+            <div><div class="ql-name">PSA 10 ※状態難</div><div class="ql-sub">Beschädigt – günstiger</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-group/37" target="_blank">
+            <span class="ql-icon">📋</span>
+            <div><div class="ql-name">Alle Graded</div><div class="ql-sub">PSA/BGS/CGC</div></div>
+          </a>
+        </div>
+      </div>
+      <div class="links-group">
+        <div class="links-group-title"><span>🌍</span> Sprache</div>
+        <div class="link-grid">
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list?keyword=%E8%8B%B1%E8%AA%9E%E7%89%88" target="_blank">
+            <span class="ql-icon">🇺🇸</span>
+            <div><div class="ql-name">Englisch</div><div class="ql-sub">英語版</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list?keyword=%E4%B8%AD%E5%9B%BD%E7%89%88" target="_blank">
+            <span class="ql-icon">🇨🇳</span>
+            <div><div class="ql-name">Chinesisch</div><div class="ql-sub">中国版</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list?keyword=%E8%8B%B1%E8%AA%9E%E7%89%88%20PSA10%E9%91%91%E5%AE%9A%E6%B8%88" target="_blank">
+            <span class="ql-icon">🇺🇸</span>
+            <div><div class="ql-name">Englisch PSA 10</div><div class="ql-sub">graded</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list?keyword=%E4%B8%AD%E5%9B%BD%E7%89%88%20PSA10%E9%91%91%E5%AE%9A%E6%B8%88" target="_blank">
+            <span class="ql-icon">🇨🇳</span>
+            <div><div class="ql-name">Chinesisch PSA 10</div><div class="ql-sub">graded</div></div>
+          </a>
+        </div>
+      </div>
+      <div class="links-group" style="border-bottom:none">
+        <div class="links-group-title"><span>🔗</span> Schnellzugriff</div>
+        <div class="link-grid">
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-list/4" target="_blank">
+            <span class="ql-icon">📦</span>
+            <div><div class="ql-name">Ungeöffnete BOX</div><div class="ql-sub">未開封BOX</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-group/1" target="_blank">
+            <span class="ql-icon">🏷️</span>
+            <div><div class="ql-name">Sale</div><div class="ql-sub">セール販売</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/product-group/5" target="_blank">
+            <span class="ql-icon">⭐</span>
+            <div><div class="ql-name">Promos</div><div class="ql-sub">プロモカード</div></div>
+          </a>
+          <a class="quick-link" href="https://www.cardrush-op.jp/news" target="_blank">
+            <span class="ql-icon">📰</span>
+            <div><div class="ql-name">News</div><div class="ql-sub">更新情報</div></div>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS TAB -->
+    <div class="panel" id="panel-settings">
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Prüf-Intervall</div>
+          <div class="settings-sub">Wie oft automatisch prüfen</div>
+        </div>
+        <select class="interval-select" id="interval-select">
+          <option value="300000">5 Minuten</option>
+          <option value="900000" selected>15 Minuten</option>
+          <option value="1800000">30 Minuten</option>
+          <option value="3600000">1 Stunde</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Benachrichtigungen</div>
+          <div class="settings-sub" id="notif-status">Noch nicht aktiviert</div>
+        </div>
+        <button class="notif-btn" id="notif-btn2">Aktivieren</button>
+      </div>
+      <div class="footer-actions">
+        <button class="action-btn" id="clear-btn">Alerts leeren</button>
+        <button class="action-btn danger" id="reset-btn">Alle Daten löschen</button>
+      </div>
+      <div class="hint" style="padding-top:0">
+        Version 2.0 · CardRush Monitor PWA<br>
+        Daten werden lokal auf deinem Gerät gespeichert.
+      </div>
+    </div>
+
+  </div><!-- /panels -->
+</div><!-- /app -->
+
+<script>
+// ── IndexedDB ────────────────────────────────────────────────────────────────
+let db;
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("cardrush", 2);
+    req.onupgradeneeded = ev => {
+      const d = ev.target.result;
+      if (!d.objectStoreNames.contains("state")) d.createObjectStore("state");
+    };
+    req.onsuccess = ev => { db = ev.target.result; resolve(db); };
+    req.onerror = () => reject(req.error);
+  });
+}
+function dbGet(key) {
+  return new Promise(r => {
+    const req = db.transaction("state","readonly").objectStore("state").get(key);
+    req.onsuccess = () => r(req.result ?? null);
+    req.onerror = () => r(null);
+  });
+}
+function dbSet(key, val) {
+  return new Promise(r => {
+    const tx = db.transaction("state","readwrite");
+    tx.objectStore("state").put(val, key);
+    tx.oncomplete = r;
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+function timeAgo(ts) {
+  if (!ts) return "Noch nicht geprüft";
+  const d = Math.floor((Date.now()-ts)/1000);
+  if (d < 10) return "Gerade eben";
+  if (d < 60) return `vor ${d} Sek.`;
+  if (d < 3600) return `vor ${Math.floor(d/60)} Min.`;
+  return `vor ${Math.floor(d/3600)} Std.`;
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll(".tab").forEach(el => {
+  el.addEventListener("click", () => {
+    const t = el.dataset.tab;
+    document.querySelectorAll(".tab, .panel").forEach(x => x.classList.remove("active"));
+    document.getElementById("tab-"+t).classList.add("active");
+    document.getElementById("panel-"+t).classList.add("active");
+  });
+});
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function renderList(id, items, fn, empty) {
+  const el = document.getElementById(id);
+  el.innerHTML = items?.length
+    ? items.map(fn).join("")
+    : `<div class="empty-state">${empty}</div>`;
+  el.querySelectorAll("[data-url]").forEach(n => n.addEventListener("click", () => window.open(n.dataset.url, "_blank")));
+  el.querySelectorAll("[data-remove]").forEach(n => n.addEventListener("click", e => { e.stopPropagation(); removeWatch(n.dataset.remove); }));
+}
+
+function newItemHtml(p) {
+  return `<div class="product-item" data-url="${esc(p.url)}">
+    <span class="product-dot"></span>
+    <span class="product-name">${esc(p.name)}</span>
+    <span class="product-tag tag-new">NEU</span>
+  </div>`;
+}
+function restockItemHtml(p) {
+  return `<div class="product-item" data-url="${esc(p.url)}">
+    <span class="product-dot green"></span>
+    <span class="product-name">${esc(p.name)}</span>
+    <span class="product-tag tag-restock">RESTOCK</span>
+  </div>`;
+}
+function priceItemHtml(p) {
+  const cheaper = p.price < p.oldPrice;
+  const pct = Math.round(Math.abs(p.price - p.oldPrice) / p.oldPrice * 100);
+  return `<div class="product-item" data-url="${esc(p.url)}">
+    <span class="product-dot ${cheaper?"green":"red"}"></span>
+    <span class="product-name">${esc(p.name)}</span>
+    <span class="price-badge ${cheaper?"price-down":"price-up"}">¥${p.oldPrice}→¥${p.price} ${cheaper?"↓":"↑"}${pct}%</span>
+  </div>`;
+}
+function watchItemHtml(p) {
+  const dot = p.inStock ? "green" : "red";
+  const tag = p.inStock
+    ? `<span class="product-tag tag-in">Verfügbar</span>`
+    : `<span class="product-tag tag-out">Ausverkauft</span>`;
+  let priceHtml = "";
+  if (p.price) {
+    if (p.oldPrice && p.oldPrice !== p.price) {
+      const cheaper = p.price < p.oldPrice;
+      priceHtml = `<span class="price-badge ${cheaper?"price-down":"price-up"}">¥${p.price}${cheaper?"↓":"↑"}</span>`;
+    } else {
+      priceHtml = `<span class="price-badge">¥${p.price}</span>`;
+    }
+  }
+  return `<div class="watch-item">
+    <span class="product-dot ${dot}"></span>
+    <span class="product-name watch-name" data-url="${esc(p.url)}">${esc(p.name)}</span>
+    ${priceHtml}${tag}
+    <button class="remove-btn" data-remove="${esc(p.url)}">✕</button>
+  </div>`;
+}
+
+// ── Load state ────────────────────────────────────────────────────────────────
+async function loadState() {
+  const [newItems, restocks, priceAlerts, watchlist, lastCheck, interval] = await Promise.all([
+    dbGet("recentNew"), dbGet("restockAlerts"), dbGet("priceAlerts"),
+    dbGet("watchlist"), dbGet("lastCheck"), dbGet("interval")
+  ]);
+
+  document.getElementById("last-check").textContent = timeAgo(lastCheck);
+
+  renderList("new-list",     newItems    || [], newItemHtml,     "Noch keine neuen Produkte");
+  renderList("restock-list", restocks    || [], restockItemHtml, "Keine Restocks");
+  renderList("price-list",   priceAlerts || [], priceItemHtml,   "Keine Preisänderungen");
+  renderList("watch-list",   watchlist   || [], watchItemHtml,   "Noch keine Produkte beobachtet");
+
+  const total = (newItems||[]).length + (restocks||[]).length + (priceAlerts||[]).length;
+  const ba = document.getElementById("badge-alerts");
+  ba.textContent = total; ba.style.display = total > 0 ? "inline-flex" : "none";
+
+  const outCount = (watchlist||[]).filter(x=>!x.inStock).length;
+  const bw = document.getElementById("badge-watch");
+  bw.textContent = outCount; bw.style.display = outCount > 0 ? "inline-flex" : "none";
+
+  if (interval) document.getElementById("interval-select").value = String(interval);
+  updateNotifStatus();
+}
+
+// ── Product page parser ───────────────────────────────────────────────────────
+function parseProductPage(html, url) {
+  const priceMatch = html.match(/product:price:amount[^>]+content="(\d+)"/);
+  const price = priceMatch ? parseInt(priceMatch[1]) : null;
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+  const name = titleMatch ? titleMatch[1].replace(/ - カードラッシュ ワンピース/, "").trim() : url;
+  const soldOut = /売り切れ|在庫なし|soldout|sold.out|入荷待ち/i.test(html) || price === null || price === 0;
+  return { name, price, inStock: !soldOut };
+}
+
+async function checkWatchedProduct(item) {
+  try {
+    const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(item.url), { cache: "no-store" });
+    const html = await res.text();
+    const { name, price, inStock } = parseProductPage(html, item.url);
+    return { ...item, name, price, inStock };
+  } catch { return item; }
+}
+
+// ── Check ─────────────────────────────────────────────────────────────────────
+async function runCheck() {
+  const watchlist = (await dbGet("watchlist")) || [];
+  if (!watchlist.length) return;
+  const now = Date.now();
+  const updated = await Promise.all(watchlist.map(checkWatchedProduct));
+  const newRestocks = [], newPriceChanges = [];
+
+  updated.forEach((item, i) => {
+    const prev = watchlist[i];
+    if (!prev.inStock && item.inStock) newRestocks.push(item);
+    if (prev.price && item.price && prev.price !== item.price) {
+      newPriceChanges.push({ ...item, oldPrice: prev.price, priceChangedAt: now });
+    }
+  });
+
+  await dbSet("watchlist", updated);
+  if (newRestocks.length) {
+    const prev = (await dbGet("restockAlerts")) || [];
+    await dbSet("restockAlerts", [...newRestocks, ...prev].slice(0, 20));
+  }
+  if (newPriceChanges.length) {
+    const prev = (await dbGet("priceAlerts")) || [];
+    await dbSet("priceAlerts", [...newPriceChanges, ...prev].slice(0, 20));
+  }
+  await dbSet("lastCheck", now);
+  await loadState();
+}
+
+// ── Check button ──────────────────────────────────────────────────────────────
+document.getElementById("check-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("check-btn");
+  const dot = document.getElementById("dot");
+  btn.disabled = true; btn.textContent = "…"; dot.className = "dot checking";
+  await runCheck();
+  btn.disabled = false; btn.textContent = "Prüfen"; dot.className = "dot";
+});
+
+// ── Auto check interval ───────────────────────────────────────────────────────
+let checkTimer;
+async function setupTimer() {
+  clearInterval(checkTimer);
+  const interval = (await dbGet("interval")) || 900000;
+  checkTimer = setInterval(runCheck, interval);
+}
+document.getElementById("interval-select").addEventListener("change", async function() {
+  await dbSet("interval", parseInt(this.value));
+  setupTimer();
+});
+
+// ── Watchlist add ─────────────────────────────────────────────────────────────
+function showMsg(msg, type) {
+  const el = document.getElementById("status-msg");
+  el.textContent = msg; el.className = "status-msg " + (type||"");
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", 3500);
+}
+async function addWatch() {
+  let url = document.getElementById("watch-url").value.trim();
+  if (!url) return;
+  if (/^\d+$/.test(url)) url = "https://www.cardrush-op.jp/product/" + url;
+  if (url.startsWith("cardrush-op.jp")) url = "https://www." + url;
+  if (url.startsWith("www.cardrush-op.jp")) url = "https://" + url;
+  if (!url.includes("cardrush-op.jp/product/")) {
+    showMsg("Bitte eine gültige cardrush-op.jp/product/… URL eingeben.", "error"); return;
+  }
+  const btn = document.getElementById("add-btn");
+  btn.disabled = true; btn.textContent = "…";
+  try {
+    const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(url), { cache: "no-store" });
+    const html = await res.text();
+    const { name, price, inStock } = parseProductPage(html, url);
+    const watchlist = (await dbGet("watchlist")) || [];
+    if (watchlist.find(x => x.url === url)) {
+      showMsg("Dieses Produkt wird bereits beobachtet.", "error");
+    } else {
+      await dbSet("watchlist", [...watchlist, { url, name, price, inStock }]);
+      document.getElementById("watch-url").value = "";
+      showMsg("✓ " + name + " wird beobachtet.", "success");
+      await loadState();
+    }
+  } catch { showMsg("Fehler beim Laden. URL korrekt?", "error"); }
+  btn.disabled = false; btn.textContent = "＋";
+}
+document.getElementById("add-btn").addEventListener("click", addWatch);
+document.getElementById("watch-url").addEventListener("keydown", e => { if (e.key === "Enter") addWatch(); });
+
+async function removeWatch(url) {
+  const list = ((await dbGet("watchlist")) || []).filter(x => x.url !== url);
+  await dbSet("watchlist", list);
+  await loadState();
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+function updateNotifStatus() {
+  const granted = Notification.permission === "granted";
+  ["notif-btn","notif-btn2"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = granted ? "✓ Aktiv" : "🔔 Aktivieren"; el.className = "notif-btn" + (granted?" granted":""); }
+  });
+  const sub = document.getElementById("notif-status");
+  if (sub) sub.textContent = granted ? "Benachrichtigungen aktiv ✓" : "Noch nicht aktiviert";
+}
+async function requestNotif() {
+  if (Notification.permission === "default") await Notification.requestPermission();
+  updateNotifStatus();
+}
+document.getElementById("notif-btn").addEventListener("click", requestNotif);
+document.getElementById("notif-btn2").addEventListener("click", requestNotif);
+
+// ── Clear / Reset ─────────────────────────────────────────────────────────────
+document.getElementById("clear-btn").addEventListener("click", async () => {
+  await dbSet("recentNew", []); await dbSet("restockAlerts", []); await dbSet("priceAlerts", []);
+  await loadState();
+});
+document.getElementById("reset-btn").addEventListener("click", async () => {
+  if (!confirm("Alle gespeicherten Daten (Watchlist, Alerts) löschen?")) return;
+  await Promise.all(["recentNew","restockAlerts","priceAlerts","watchlist","lastCheck"].map(k => dbSet(k, null)));
+  await loadState();
+});
+
+// ── Service Worker ────────────────────────────────────────────────────────────
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").then(reg => {
+    console.log("SW registered");
+    // Periodic sync if supported
+    if ("periodicSync" in reg) {
+      navigator.permissions.query({ name: "periodic-background-sync" }).then(status => {
+        if (status.state === "granted") {
+          reg.periodicSync.register("cardrush-check", { minInterval: 15 * 60 * 1000 });
+        }
+      });
+    }
+  });
+  navigator.serviceWorker.addEventListener("message", e => {
+    if (e.data?.action === "checkDone") loadState();
+  });
+}
+
+// ── Install prompt ────────────────────────────────────────────────────────────
+let deferredPrompt;
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault(); deferredPrompt = e;
+  document.getElementById("install-banner").classList.add("show");
+});
+document.getElementById("install-btn").addEventListener("click", async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === "accepted") document.getElementById("install-banner").classList.remove("show");
+  deferredPrompt = null;
+});
+window.addEventListener("appinstalled", () => {
+  document.getElementById("install-banner").classList.remove("show");
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+openDB().then(() => { loadState(); setupTimer(); });
+setInterval(() => {
+  dbGet("lastCheck").then(ts => {
+    document.getElementById("last-check").textContent = timeAgo(ts);
+  });
+}, 30000);
+</script>
+</body>
+</html>
