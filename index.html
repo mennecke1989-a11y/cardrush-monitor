@@ -600,6 +600,8 @@ async function addWatch() {
   if (/^\d+$/.test(url)) url = "https://www.cardrush-op.jp/product/" + url;
   if (url.startsWith("cardrush-op.jp")) url = "https://www." + url;
   if (url.startsWith("www.cardrush-op.jp")) url = "https://" + url;
+  // Normalize mobile URLs: /phone/product/123 → /product/123
+  url = url.replace(/cardrush-op\.jp\/phone\//, "cardrush-op.jp/");
   if (!url.includes("cardrush-op.jp/product/")) {
     showMsg("Bitte eine gültige cardrush-op.jp/product/… URL eingeben.", "error"); return;
   }
