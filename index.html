@@ -594,15 +594,15 @@ function priceItemHtml(p) {
     <span class="price-badge ${cheaper?"price-down":"price-up"}">¥${p.oldPrice}→¥${p.price} ${cheaper?"↓":"↑"}${pct}%</span>
   </div>`;
 }
-function cardmarketUrl(name) {
-  // Strip Japanese brackets/grades, keep meaningful search terms
-  const clean = name
-    .replace(/【[^】]*】/g, " ")
-    .replace(/〔[^〕]*〕/g, " ")
-    .replace(/[「」『』()（）]/g, " ")
-    .replace(/PSA\d+|BGS\d+|CGC\d+/gi, "")
-    .replace(/鑑定済|パラレル|シークレット|スーパーレア|ウルトラレア/g, "")
-    .trim().replace(/\s+/g, " ");
+function cardmarketUrl(name, originalName) {
+  // Extract card number like OP01-016, OP12-020 from translated or original name
+  const search = originalName || name;
+  const match = search.match(/[Oo][Pp]\d{2}-\d{3}/);
+  if (match) {
+    return "https://www.cardmarket.com/en/OnePiece/Products/Search?searchString=" + match[0].toUpperCase();
+  }
+  // Fallback: use translated name
+  const clean = name.replace(/【[^】]*】/g, " ").replace(/[「」『』()（）]/g, " ").trim().replace(/\s+/g, " ");
   return "https://www.cardmarket.com/en/OnePiece/Products/Search?searchString=" + encodeURIComponent(clean);
 }
 
@@ -632,7 +632,7 @@ function watchItemHtml(p) {
     <div class="watch-item-actions">
       <button class="chart-btn" data-chart="${esc(p.url)}">📈 Verlauf</button>
       <button class="${alarmClass}" data-alarm="${esc(p.url)}">${alarmLabel}</button>
-      <a class="cm-btn" href="${esc(cardmarketUrl(p.name))}" target="_blank">🛒 CM</a>
+      <a class="cm-btn" href="${esc(cardmarketUrl(p.name, p.nameOriginal))}" target="_blank">🛒 CM</a>
     </div>
   </div>`;
 }
