@@ -1,4 +1,4 @@
-const CACHE_NAME = "cardrush-v1";
+const CACHE_NAME = "cardrush-v3";
 const ASSETS = ["./index.html", "./manifest.json", "./icons/icon192.png", "./icons/icon512.png"];
 
 // ── Install & Cache ──────────────────────────────────────────────────────────
@@ -8,7 +8,13 @@ self.addEventListener("install", e => {
 });
 
 self.addEventListener("activate", e => {
-  e.waitUntil(clients.claim());
+  // Delete all old caches automatically
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    )
+  );
+  clients.claim();
 });
 
 self.addEventListener("fetch", e => {
