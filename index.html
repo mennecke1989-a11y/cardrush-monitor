@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="CardRush">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <title>CardRush Monitor</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -112,6 +113,62 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 }
 .price-badge.price-down { background: var(--green-bg); color: var(--green-text); }
 .price-badge.price-up   { background: var(--red-bg); color: var(--red-text); }
+
+/* ── Watch item extended ── */
+.watch-item-body { display: flex; align-items: center; gap: 8px; padding: 9px 0 4px; border-bottom: 1px solid #151a24; flex-wrap: wrap; }
+.watch-item-body:last-child { border-bottom: none; }
+.watch-item-actions { display: flex; align-items: center; gap: 6px; padding: 0 0 8px; border-bottom: 1px solid #151a24; }
+.watch-item-wrap:last-child .watch-item-actions { border-bottom: none; }
+.alarm-badge {
+  font-size: 10px; padding: 2px 6px; border-radius: 5px; flex-shrink: 0;
+  background: #1c1a10; color: #fbbf24; border: 1px solid #78350f; cursor: pointer;
+}
+.alarm-badge.active { background: #78350f; color: #fde68a; }
+.chart-btn, .alarm-btn {
+  background: none; border: 1px solid var(--border2); color: var(--muted2);
+  padding: 3px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; white-space: nowrap;
+}
+.chart-btn:active, .alarm-btn:active { border-color: var(--blue); color: var(--blue2); }
+
+/* ── Modal ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: #000000cc;
+  z-index: 100; align-items: flex-end; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface); border-radius: 16px 16px 0 0;
+  width: 100%; max-height: 85dvh; overflow-y: auto;
+  padding: 0 0 calc(16px + var(--safe-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+.modal-handle { width: 36px; height: 4px; background: #2a3448; border-radius: 2px; margin: 10px auto 0; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; border-bottom: 1px solid var(--border2); }
+.modal-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.modal-close { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0 4px; }
+.modal-body { padding: 16px; }
+
+/* ── Chart ── */
+.chart-wrap { position: relative; height: 180px; margin-bottom: 12px; }
+canvas#price-chart { width: 100% !important; height: 180px !important; }
+.chart-empty { color: var(--muted2); font-size: 13px; text-align: center; padding: 60px 0; }
+.chart-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 4px; }
+.stat-box { background: var(--surface2); border-radius: 8px; padding: 10px; text-align: center; }
+.stat-val { font-size: 14px; font-weight: 700; color: var(--text); }
+.stat-lbl { font-size: 10px; color: var(--muted2); margin-top: 2px; }
+
+/* ── Alarm ── */
+.alarm-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.alarm-input {
+  flex: 1; background: var(--surface2); border: 1px solid #2a3448;
+  color: var(--text); padding: 10px 12px; border-radius: 8px; font-size: 14px; outline: none;
+}
+.alarm-input:focus { border-color: var(--amber); }
+.alarm-save { background: #78350f; color: #fde68a; border: none; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.alarm-save:active { background: #92400e; }
+.alarm-clear { background: none; border: 1px solid var(--border2); color: var(--muted); padding: 10px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.alarm-hint { font-size: 12px; color: var(--muted2); line-height: 1.5; }
+.alarm-current { font-size: 13px; color: #fbbf24; margin-bottom: 12px; }
 .empty-state { color: var(--muted2); font-size: 12px; text-align: center; padding: 20px 0; }
 
 /* ── Watchlist ── */
@@ -385,6 +442,41 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
     </div>
 
   </div><!-- /panels -->
+<!-- ── Chart Modal ── -->
+<div class="modal-overlay" id="chart-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="chart-title">Preisverlauf</span>
+      <button class="modal-close" id="chart-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="chart-wrap"><canvas id="price-chart"></canvas><div class="chart-empty" id="chart-empty" style="display:none">Noch nicht genug Daten.<br>Preis wird bei jedem Check gespeichert.</div></div>
+      <div class="chart-stats" id="chart-stats"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Alarm Modal ── -->
+<div class="modal-overlay" id="alarm-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">Preisalarm</span>
+      <button class="modal-close" id="alarm-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alarm-current" id="alarm-current"></div>
+      <div class="alarm-row">
+        <input class="alarm-input" id="alarm-input" type="number" placeholder="z.B. 5000" inputmode="numeric" />
+        <button class="alarm-save" id="alarm-save">Speichern</button>
+        <button class="alarm-clear" id="alarm-clear-btn">✕</button>
+      </div>
+      <div class="alarm-hint">Benachrichtigung wenn der Preis <strong>unter</strong> diesen Wert fällt (in ¥).</div>
+    </div>
+  </div>
+</div>
+
 </div><!-- /app -->
 
 <script>
@@ -445,6 +537,8 @@ function renderList(id, items, fn, empty) {
     : `<div class="empty-state">${empty}</div>`;
   el.querySelectorAll("[data-url]").forEach(n => n.addEventListener("click", () => window.open(n.dataset.url, "_blank")));
   el.querySelectorAll("[data-remove]").forEach(n => n.addEventListener("click", e => { e.stopPropagation(); removeWatch(n.dataset.remove); }));
+  el.querySelectorAll("[data-chart]").forEach(n => n.addEventListener("click", e => { e.stopPropagation(); openChartModal(n.dataset.chart); }));
+  el.querySelectorAll("[data-alarm]").forEach(n => n.addEventListener("click", e => { e.stopPropagation(); openAlarmModal(n.dataset.alarm); }));
 }
 
 function newItemHtml(p) {
@@ -484,11 +578,19 @@ function watchItemHtml(p) {
       priceHtml = `<span class="price-badge">¥${p.price}</span>`;
     }
   }
-  return `<div class="watch-item">
-    <span class="product-dot ${dot}"></span>
-    <span class="product-name watch-name" data-url="${esc(p.url)}">${esc(p.name)}</span>
-    ${priceHtml}${tag}
-    <button class="remove-btn" data-remove="${esc(p.url)}">✕</button>
+  const alarmClass = p.priceAlarm ? "alarm-badge active" : "alarm-badge";
+  const alarmLabel = p.priceAlarm ? `🔔 ¥${p.priceAlarm}` : "🔔 Alarm";
+  return `<div class="watch-item-wrap">
+    <div class="watch-item-body">
+      <span class="product-dot ${dot}"></span>
+      <span class="product-name watch-name" data-url="${esc(p.url)}">${esc(p.name)}</span>
+      ${priceHtml}${tag}
+      <button class="remove-btn" data-remove="${esc(p.url)}">✕</button>
+    </div>
+    <div class="watch-item-actions">
+      <button class="chart-btn" data-chart="${esc(p.url)}">📈 Verlauf</button>
+      <button class="${alarmClass}" data-alarm="${esc(p.url)}">${alarmLabel}</button>
+    </div>
   </div>`;
 }
 
@@ -545,13 +647,39 @@ async function runCheck() {
   const updated = await Promise.all(watchlist.map(checkWatchedProduct));
   const newRestocks = [], newPriceChanges = [];
 
-  updated.forEach((item, i) => {
+  for (let i = 0; i < updated.length; i++) {
+    const item = updated[i];
     const prev = watchlist[i];
+
     if (!prev.inStock && item.inStock) newRestocks.push(item);
+
     if (prev.price && item.price && prev.price !== item.price) {
       newPriceChanges.push({ ...item, oldPrice: prev.price, priceChangedAt: now });
     }
-  });
+
+    // Save price history
+    if (item.price) {
+      const histKey = "history:" + encodeURIComponent(item.url);
+      const hist = (await dbGet(histKey)) || [];
+      hist.push({ t: now, p: item.price });
+      await dbSet(histKey, hist.slice(-90)); // keep last 90 data points
+    }
+
+    // Price alarm check
+    if (item.priceAlarm && item.price && item.price < item.priceAlarm) {
+      if (!prev.alarmFired || prev.price !== item.price) {
+        updated[i] = { ...item, alarmFired: true };
+        if (Notification.permission === "granted") {
+          new Notification("🎯 CardRush – Preisalarm!", {
+            body: `${item.name}\n¥${item.price} (Ziel: unter ¥${item.priceAlarm})`,
+            icon: "./icons/icon192.png"
+          });
+        }
+      }
+    } else if (updated[i].alarmFired && item.price >= (item.priceAlarm||0)) {
+      updated[i] = { ...item, alarmFired: false }; // reset when price rises again
+    }
+  }
 
   await dbSet("watchlist", updated);
   if (newRestocks.length) {
@@ -713,8 +841,128 @@ window.addEventListener("appinstalled", () => {
   document.getElementById("install-banner").classList.remove("show");
 });
 
+// ── Chart Modal ───────────────────────────────────────────────────────────────
+let chartInstance = null;
+async function openChartModal(url) {
+  const watchlist = (await dbGet("watchlist")) || [];
+  const item = watchlist.find(x => x.url === url);
+  document.getElementById("chart-title").textContent = item?.name || "Preisverlauf";
+
+  const histKey = "history:" + encodeURIComponent(url);
+  const hist = (await dbGet(histKey)) || [];
+
+  const canvas = document.getElementById("price-chart");
+  const empty = document.getElementById("chart-empty");
+  const stats = document.getElementById("chart-stats");
+
+  if (hist.length < 2) {
+    canvas.style.display = "none"; empty.style.display = "block"; stats.innerHTML = "";
+  } else {
+    canvas.style.display = "block"; empty.style.display = "none";
+
+    const labels = hist.map(h => {
+      const d = new Date(h.t);
+      return d.getDate() + "." + (d.getMonth()+1) + " " + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+    });
+    const prices = hist.map(h => h.p);
+    const minP = Math.min(...prices), maxP = Math.max(...prices), cur = prices[prices.length-1];
+
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          data: prices,
+          borderColor: "#3b82f6",
+          backgroundColor: "rgba(59,130,246,0.1)",
+          pointRadius: hist.length > 20 ? 0 : 3,
+          pointBackgroundColor: "#3b82f6",
+          fill: true, tension: 0.3
+        }]
+      },
+      options: {
+        responsive: false, animation: false,
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => "¥" + ctx.parsed.y.toLocaleString() }
+        }},
+        scales: {
+          x: { ticks: { color: "#6b7a99", maxTicksLimit: 6, font: { size: 10 } }, grid: { color: "#1a1f2c" } },
+          y: { ticks: { color: "#6b7a99", font: { size: 10 }, callback: v => "¥"+v.toLocaleString() }, grid: { color: "#1a1f2c" } }
+        }
+      }
+    });
+
+    stats.innerHTML = `
+      <div class="stat-box"><div class="stat-val">¥${cur.toLocaleString()}</div><div class="stat-lbl">Aktuell</div></div>
+      <div class="stat-box"><div class="stat-val" style="color:var(--green-text)">¥${minP.toLocaleString()}</div><div class="stat-lbl">Tiefstwert</div></div>
+      <div class="stat-box"><div class="stat-val" style="color:var(--red-text)">¥${maxP.toLocaleString()}</div><div class="stat-lbl">Höchstwert</div></div>
+    `;
+  }
+  document.getElementById("chart-modal").classList.add("open");
+}
+document.getElementById("chart-close").addEventListener("click", () => document.getElementById("chart-modal").classList.remove("open"));
+document.getElementById("chart-modal").addEventListener("click", e => { if (e.target === e.currentTarget) e.currentTarget.classList.remove("open"); });
+
+// ── Alarm Modal ───────────────────────────────────────────────────────────────
+let alarmUrl = null;
+async function openAlarmModal(url) {
+  alarmUrl = url;
+  const watchlist = (await dbGet("watchlist")) || [];
+  const item = watchlist.find(x => x.url === url);
+  const cur = document.getElementById("alarm-current");
+  cur.textContent = item?.priceAlarm
+    ? `Aktueller Alarm: unter ¥${item.priceAlarm} · Aktueller Preis: ¥${item.price||"?"}`
+    : `Kein Alarm gesetzt · Aktueller Preis: ¥${item?.price||"?"}`;
+  document.getElementById("alarm-input").value = item?.priceAlarm || "";
+  document.getElementById("alarm-modal").classList.add("open");
+  setTimeout(() => document.getElementById("alarm-input").focus(), 300);
+}
+document.getElementById("alarm-close").addEventListener("click", () => document.getElementById("alarm-modal").classList.remove("open"));
+document.getElementById("alarm-modal").addEventListener("click", e => { if (e.target === e.currentTarget) e.currentTarget.classList.remove("open"); });
+
+document.getElementById("alarm-save").addEventListener("click", async () => {
+  if (!alarmUrl) return;
+  const val = parseInt(document.getElementById("alarm-input").value);
+  if (isNaN(val) || val <= 0) { showMsg("Bitte einen gültigen Betrag eingeben.", "error"); return; }
+  const watchlist = (await dbGet("watchlist")) || [];
+  const updated = watchlist.map(x => x.url === alarmUrl ? { ...x, priceAlarm: val, alarmFired: false } : x);
+  await dbSet("watchlist", updated);
+  document.getElementById("alarm-modal").classList.remove("open");
+  showMsg(`✓ Alarm gesetzt: unter ¥${val}`, "success");
+  await loadState();
+});
+
+document.getElementById("alarm-clear-btn").addEventListener("click", async () => {
+  if (!alarmUrl) return;
+  const watchlist = (await dbGet("watchlist")) || [];
+  const updated = watchlist.map(x => x.url === alarmUrl ? { ...x, priceAlarm: null, alarmFired: false } : x);
+  await dbSet("watchlist", updated);
+  document.getElementById("alarm-modal").classList.remove("open");
+  await loadState();
+});
+
+// ── Share Target ───────────────────────────────────────────────────────────────
+const sharedUrl = new URLSearchParams(location.search).get("shared_url");
+if (sharedUrl) {
+  // Remove param from URL without reload
+  history.replaceState({}, "", location.pathname);
+  window.addEventListener("dbready", () => {
+    document.getElementById("watch-url").value = sharedUrl;
+    // Switch to watchlist tab
+    document.querySelectorAll(".tab, .panel").forEach(x => x.classList.remove("active"));
+    document.getElementById("tab-watch").classList.add("active");
+    document.getElementById("panel-watch").classList.add("active");
+    showMsg("🔗 URL aus Chrome eingefügt – tippe ＋ zum Hinzufügen.", "success");
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
-openDB().then(() => { loadState(); setupTimer(); });
+openDB().then(() => {
+  window.dispatchEvent(new Event("dbready"));
+  loadState();
+  setupTimer();
+});
 setInterval(() => {
   dbGet("lastCheck").then(ts => {
     document.getElementById("last-check").textContent = timeAgo(ts);
