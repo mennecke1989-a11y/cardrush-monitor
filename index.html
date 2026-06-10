@@ -114,7 +114,26 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .price-badge.price-down { background: var(--green-bg); color: var(--green-text); }
 .price-badge.price-up   { background: var(--red-bg); color: var(--red-text); }
 
-/* ── Sort / Filter bar ── */
+/* ── Scanner ── */
+.scanner-cat {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 0; border-bottom: 1px solid #151a24;
+}
+.scanner-cat:last-child { border-bottom: none; }
+.scanner-cat-icon { font-size: 18px; flex-shrink: 0; }
+.scanner-cat-info { flex: 1; min-width: 0; }
+.scanner-cat-name { font-size: 13px; color: var(--text2); font-weight: 600; }
+.scanner-cat-sub { font-size: 11px; color: var(--muted2); margin-top: 1px; }
+.scanner-toggle {
+  background: none; border: 1px solid var(--border2); color: var(--muted2);
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; flex-shrink: 0;
+}
+.scanner-toggle.on { background: var(--green-bg); border-color: var(--green); color: var(--green-text); }
+.preset-chip {
+  background: var(--surface2); border: 1px solid var(--border2); color: var(--text2);
+  padding: 6px 12px; border-radius: 20px; font-size: 12px; cursor: pointer;
+}
+.preset-chip:active { border-color: var(--blue); color: var(--blue2); }
 .filter-bar {
   display: flex; gap: 6px; padding: 8px 16px;
   border-bottom: 1px solid var(--surface2); overflow-x: auto;
@@ -315,6 +334,9 @@ canvas#price-chart { width: 100% !important; height: 180px !important; }
     <div class="tab" data-tab="watch" id="tab-watch">
       Watchlist <span class="tab-badge" id="badge-watch" style="display:none;background:#15803d">0</span>
     </div>
+    <div class="tab" data-tab="scanner" id="tab-scanner">
+      Scanner <span class="tab-badge" id="badge-scanner" style="display:none">0</span>
+    </div>
     <div class="tab" data-tab="links" id="tab-links">Links</div>
     <div class="tab" data-tab="settings" id="tab-settings">⚙</div>
   </div>
@@ -363,6 +385,20 @@ canvas#price-chart { width: 100% !important; height: 180px !important; }
         <div id="watch-list"><div class="empty-state">Noch keine Produkte beobachtet</div></div>
       </div>
       <div class="hint">URL einfügen oder nur die Produkt-Nummer.<br>Benachrichtigung bei Restock & Preisänderung.</div>
+    </div>
+
+    <!-- SCANNER TAB -->
+    <div class="panel" id="panel-scanner">
+      <div class="section">
+        <div class="section-title">Überwachte Kategorien</div>
+        <div id="scanner-categories"></div>
+        <button class="action-btn" id="add-category-btn" style="margin-top:10px;width:100%">＋ Kategorie hinzufügen</button>
+      </div>
+      <div class="section">
+        <div class="section-title">Wieder verfügbar <span id="scanner-new-count"></span></div>
+        <div id="scanner-new-list"><div class="empty-state">Noch nichts gefunden</div></div>
+      </div>
+      <div class="hint">Der Scanner prüft die Kategorien beim normalen Check-Intervall und meldet Produkte die noch nie gesehen wurden.</div>
     </div>
 
     <!-- LINKS TAB -->
@@ -472,6 +508,25 @@ canvas#price-chart { width: 100% !important; height: 180px !important; }
     </div>
 
   </div><!-- /panels -->
+<!-- ── Category Modal ── -->
+<div class="modal-overlay" id="category-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">Kategorie hinzufügen</span>
+      <button class="modal-close" id="category-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:12px;font-size:13px;color:var(--muted2)">Schnellauswahl:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px" id="category-presets"></div>
+      <div style="margin-bottom:8px;font-size:13px;color:var(--muted2)">Oder eigene Suche:</div>
+      <input class="watch-input" id="category-keyword" placeholder="Suchbegriff (japanisch oder Nummer)" style="width:100%;margin-bottom:8px" />
+      <input class="watch-input" id="category-label" placeholder="Bezeichnung (z.B. PSA 10 Graded)" style="width:100%;margin-bottom:12px" />
+      <button class="alarm-save" id="category-save" style="width:100%;padding:12px">Kategorie überwachen</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Chart Modal ── -->
 <div class="modal-overlay" id="chart-modal">
   <div class="modal">
@@ -756,6 +811,7 @@ async function runCheck() {
     await dbSet("priceAlerts", [...newPriceChanges, ...prev].slice(0, 20));
   }
   await dbSet("lastCheck", now);
+  await runScannerCheck();
   await loadState();
 }
 
@@ -884,12 +940,12 @@ document.getElementById("notif-btn2").addEventListener("click", requestNotif);
 
 // ── Clear / Reset ─────────────────────────────────────────────────────────────
 document.getElementById("clear-btn").addEventListener("click", async () => {
-  await dbSet("recentNew", []); await dbSet("restockAlerts", []); await dbSet("priceAlerts", []);
-  await loadState();
+  await dbSet("recentNew", []); await dbSet("restockAlerts", []); await dbSet("priceAlerts", []); await dbSet("scannerNew", []);
+  await loadState(); renderScannerNewList();
 });
 document.getElementById("reset-btn").addEventListener("click", async () => {
   if (!confirm("Alle gespeicherten Daten (Watchlist, Alerts) löschen?")) return;
-  await Promise.all(["recentNew","restockAlerts","priceAlerts","watchlist","lastCheck"].map(k => dbSet(k, null)));
+  await Promise.all(["recentNew","restockAlerts","priceAlerts","watchlist","lastCheck","scannerNew","scannerProducts"].map(k => dbSet(k, null)));
   await loadState();
 });
 
@@ -1029,6 +1085,206 @@ document.getElementById("alarm-clear-btn").addEventListener("click", async () =>
   await loadState();
 });
 
+// ── Scanner ───────────────────────────────────────────────────────────────────
+const DEFAULT_CATEGORIES = [
+  { id: "psa10",  label: "PSA 10",         icon: "🥇", keyword: "PSA10鑑定済",       on: true  },
+  { id: "psa9",   label: "PSA 9",          icon: "🥈", keyword: "PSA9鑑定済",        on: false },
+  { id: "bgs",    label: "BGS Beckett",    icon: "💎", keyword: "BGS",               on: false },
+  { id: "cgc",    label: "CGC",            icon: "🔖", keyword: "CGC鑑定済",         on: false },
+  { id: "box",    label: "BOX (unopened)", icon: "📦", keyword: "未開封",             on: false },
+  { id: "promo",  label: "Promos",         icon: "⭐", keyword: "プロモ",             on: false },
+  { id: "en",     label: "Englisch",       icon: "🇺🇸", keyword: "英語版",            on: false },
+  { id: "en10",   label: "Englisch PSA10", icon: "🇺🇸", keyword: "英語版 PSA10鑑定済",on: false },
+];
+
+const CATEGORY_PRESETS = [
+  { label: "PSA 10",          keyword: "PSA10鑑定済",        icon: "🥇" },
+  { label: "PSA 9",           keyword: "PSA9鑑定済",         icon: "🥈" },
+  { label: "BGS",             keyword: "BGS",                icon: "💎" },
+  { label: "CGC",             keyword: "CGC鑑定済",          icon: "🔖" },
+  { label: "Englisch PSA10",  keyword: "英語版 PSA10鑑定済", icon: "🇺🇸" },
+  { label: "BOX unopened",    keyword: "未開封",              icon: "📦" },
+  { label: "Promos",          keyword: "プロモ",              icon: "⭐" },
+];
+
+async function getScannerCategories() {
+  const saved = await dbGet("scannerCategories");
+  if (saved) return saved;
+  await dbSet("scannerCategories", DEFAULT_CATEGORIES);
+  return DEFAULT_CATEGORIES;
+}
+
+async function renderScannerCategories() {
+  const cats = await getScannerCategories();
+  const el = document.getElementById("scanner-categories");
+  if (!cats.length) { el.innerHTML = `<div class="empty-state">Keine Kategorien. Füge eine hinzu.</div>`; return; }
+  el.innerHTML = cats.map(c => `
+    <div class="scanner-cat">
+      <span class="scanner-cat-icon">${c.icon||"🔍"}</span>
+      <div class="scanner-cat-info">
+        <div class="scanner-cat-name">${esc(c.label)}</div>
+        <div class="scanner-cat-sub">${esc(c.keyword)}</div>
+      </div>
+      <button class="scanner-toggle ${c.on?"on":""}" data-cat-toggle="${esc(c.id)}">${c.on?"Aktiv":"Aus"}</button>
+      <button class="remove-btn" data-cat-remove="${esc(c.id)}">✕</button>
+    </div>`).join("");
+
+  el.querySelectorAll("[data-cat-toggle]").forEach(btn => btn.addEventListener("click", async () => {
+    const cats = await getScannerCategories();
+    const updated = cats.map(c => c.id === btn.dataset.catToggle ? { ...c, on: !c.on } : c);
+    await dbSet("scannerCategories", updated);
+    renderScannerCategories();
+  }));
+  el.querySelectorAll("[data-cat-remove]").forEach(btn => btn.addEventListener("click", async () => {
+    const cats = await getScannerCategories();
+    await dbSet("scannerCategories", cats.filter(c => c.id !== btn.dataset.catRemove));
+    renderScannerCategories();
+  }));
+}
+
+async function renderScannerNewList() {
+  const items = (await dbGet("scannerNew")) || [];
+  const el = document.getElementById("scanner-new-list");
+  const countEl = document.getElementById("scanner-new-count");
+  countEl.textContent = items.length ? `(${items.length})` : "";
+  el.innerHTML = items.length
+    ? items.map(p => `<div class="product-item" data-url="${esc(p.url)}">
+        <span class="product-dot green"></span>
+        <span class="product-name">${esc(p.name)}</span>
+        ${p.price ? `<span class="price-badge">¥${p.price}</span>` : ""}
+        <span class="product-tag tag-restock">RESTOCK</span>
+      </div>`).join("")
+    : `<div class="empty-state">Noch nichts gefunden</div>`;
+  el.querySelectorAll("[data-url]").forEach(n => n.addEventListener("click", () => window.open(n.dataset.url, "_blank")));
+
+  const badge = document.getElementById("badge-scanner");
+  badge.textContent = items.length;
+  badge.style.display = items.length > 0 ? "inline-flex" : "none";
+}
+
+async function runScannerCheck() {
+  const cats = await getScannerCategories();
+  const active = cats.filter(c => c.on);
+  if (!active.length) return;
+
+  // scannerProducts: { [productId]: { url, name, price, inStock, category } }
+  const scannerProducts = (await dbGet("scannerProducts")) || {};
+  const scannerRestocks = (await dbGet("scannerNew")) || [];
+  const newRestocks = [];
+
+  for (const cat of active) {
+    try {
+      const url = "https://www.cardrush-op.jp/product-list?keyword=" + encodeURIComponent(cat.keyword);
+      const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(url), { cache: "no-store" });
+      const html = await res.text();
+
+      // Extract all product IDs visible on the listing page
+      const ids = [...new Set([...html.matchAll(/href="\/(?:phone\/)?product\/(\d+)"/g)].map(m => m[1]))];
+
+      // Products currently visible on listing = inStock (sold-out items disappear from listings)
+      const visibleIds = new Set(ids);
+
+      // Check each known product in this category: was it sold out, now visible again?
+      for (const [id, prev] of Object.entries(scannerProducts)) {
+        if (prev.category !== cat.id) continue;
+        const nowInStock = visibleIds.has(id);
+        if (!prev.inStock && nowInStock) {
+          // Restock detected!
+          newRestocks.push({ ...prev, inStock: true, restockAt: Date.now() });
+        }
+        scannerProducts[id] = { ...prev, inStock: nowInStock };
+      }
+
+      // Register newly seen products (first time we see them — no alert, just baseline)
+      for (const id of ids) {
+        if (!scannerProducts[id]) {
+          const productUrl = "https://www.cardrush-op.jp/product/" + id;
+          scannerProducts[id] = {
+            url: productUrl,
+            name: cat.label + " #" + id,
+            price: null,
+            inStock: true,
+            category: cat.id,
+            categoryLabel: cat.label,
+            firstSeen: Date.now()
+          };
+        }
+      }
+
+      // Mark products NOT on listing as sold out
+      for (const [id, prod] of Object.entries(scannerProducts)) {
+        if (prod.category === cat.id && !visibleIds.has(id)) {
+          scannerProducts[id] = { ...prod, inStock: false };
+        }
+      }
+
+    } catch { /* ignore fetch errors */ }
+  }
+
+  await dbSet("scannerProducts", scannerProducts);
+
+  if (newRestocks.length > 0) {
+    // Fetch names/prices for restocked items
+    for (const item of newRestocks) {
+      try {
+        const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(item.url), { cache: "no-store" });
+        const html = await res.text();
+        const { name, price } = parseProductPage(html, item.url);
+        const translated = await translateName(name);
+        item.name = translated;
+        item.price = price;
+        // Update in scannerProducts too
+        const id = item.url.split("/").pop();
+        if (scannerProducts[id]) scannerProducts[id] = { ...scannerProducts[id], name: translated, price };
+      } catch {}
+    }
+    await dbSet("scannerProducts", scannerProducts);
+
+    const merged = [...newRestocks, ...scannerRestocks].slice(0, 50);
+    await dbSet("scannerNew", merged);
+
+    if (Notification.permission === "granted") {
+      newRestocks.forEach(item => {
+        new Notification("✅ CardRush – Wieder verfügbar!", {
+          body: `${item.name}${item.price ? " · ¥" + item.price : ""}\nKategorie: ${item.categoryLabel}`,
+          icon: "./icons/icon192.png"
+        });
+      });
+    }
+  }
+
+  await renderScannerNewList();
+}
+
+// ── Category modal ────────────────────────────────────────────────────────────
+document.getElementById("add-category-btn").addEventListener("click", () => {
+  // Render presets
+  const presetsEl = document.getElementById("category-presets");
+  presetsEl.innerHTML = CATEGORY_PRESETS.map(p =>
+    `<div class="preset-chip" data-preset-keyword="${esc(p.keyword)}" data-preset-label="${esc(p.label)}" data-preset-icon="${esc(p.icon)}">${p.icon} ${p.label}</div>`
+  ).join("");
+  presetsEl.querySelectorAll(".preset-chip").forEach(chip => chip.addEventListener("click", () => {
+    document.getElementById("category-keyword").value = chip.dataset.presetKeyword;
+    document.getElementById("category-label").value = chip.dataset.presetLabel;
+  }));
+  document.getElementById("category-modal").classList.add("open");
+});
+document.getElementById("category-close").addEventListener("click", () => document.getElementById("category-modal").classList.remove("open"));
+document.getElementById("category-modal").addEventListener("click", e => { if (e.target === e.currentTarget) e.currentTarget.classList.remove("open"); });
+
+document.getElementById("category-save").addEventListener("click", async () => {
+  const keyword = document.getElementById("category-keyword").value.trim();
+  const label = document.getElementById("category-label").value.trim();
+  if (!keyword || !label) { return; }
+  const cats = await getScannerCategories();
+  const id = "custom_" + Date.now();
+  await dbSet("scannerCategories", [...cats, { id, label, icon: "🔍", keyword, on: true }]);
+  document.getElementById("category-keyword").value = "";
+  document.getElementById("category-label").value = "";
+  document.getElementById("category-modal").classList.remove("open");
+  renderScannerCategories();
+});
+
 // ── Share Target ───────────────────────────────────────────────────────────────
 const sharedUrl = new URLSearchParams(location.search).get("shared_url");
 if (sharedUrl) {
@@ -1048,6 +1304,8 @@ if (sharedUrl) {
 openDB().then(() => {
   window.dispatchEvent(new Event("dbready"));
   loadState();
+  renderScannerCategories();
+  renderScannerNewList();
   setupTimer();
 });
 setInterval(() => {
