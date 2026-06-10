@@ -1087,24 +1087,28 @@ document.getElementById("alarm-clear-btn").addEventListener("click", async () =>
 
 // ── Scanner ───────────────────────────────────────────────────────────────────
 const DEFAULT_CATEGORIES = [
-  { id: "psa10",  label: "PSA 10",         icon: "🥇", keyword: "PSA10鑑定済",       on: true  },
-  { id: "psa9",   label: "PSA 9",          icon: "🥈", keyword: "PSA9鑑定済",        on: false },
-  { id: "bgs",    label: "BGS Beckett",    icon: "💎", keyword: "BGS",               on: false },
-  { id: "cgc",    label: "CGC",            icon: "🔖", keyword: "CGC鑑定済",         on: false },
-  { id: "box",    label: "BOX (unopened)", icon: "📦", keyword: "未開封",             on: false },
-  { id: "promo",  label: "Promos",         icon: "⭐", keyword: "プロモ",             on: false },
-  { id: "en",     label: "Englisch",       icon: "🇺🇸", keyword: "英語版",            on: false },
-  { id: "en10",   label: "Englisch PSA10", icon: "🇺🇸", keyword: "英語版 PSA10鑑定済",on: false },
+  { id: "psa10",       label: "PSA 10",              icon: "🥇", keyword: "PSA10鑑定済",          on: true  },
+  { id: "psa9",        label: "PSA 9",               icon: "🥈", keyword: "PSA9鑑定済",           on: false },
+  { id: "bgs",         label: "BGS Beckett",         icon: "💎", keyword: "BGS",                  on: false },
+  { id: "cgc",         label: "CGC",                 icon: "🔖", keyword: "CGC鑑定済",            on: false },
+  { id: "promo",       label: "Promos",              icon: "⭐", keyword: "プロモ",                on: true  },
+  { id: "promo_psa10", label: "Promos PSA 10",       icon: "⭐", keyword: "プロモ PSA10鑑定済",   on: true  },
+  { id: "promo_graded",label: "Promos Graded (alle)",icon: "⭐", keyword: "プロモ 鑑定済",        on: false },
+  { id: "box",         label: "BOX (unopened)",      icon: "📦", keyword: "未開封",                on: false },
+  { id: "en",          label: "Englisch",            icon: "🇺🇸", keyword: "英語版",               on: false },
+  { id: "en10",        label: "Englisch PSA 10",     icon: "🇺🇸", keyword: "英語版 PSA10鑑定済",  on: false },
 ];
 
 const CATEGORY_PRESETS = [
-  { label: "PSA 10",          keyword: "PSA10鑑定済",        icon: "🥇" },
-  { label: "PSA 9",           keyword: "PSA9鑑定済",         icon: "🥈" },
-  { label: "BGS",             keyword: "BGS",                icon: "💎" },
-  { label: "CGC",             keyword: "CGC鑑定済",          icon: "🔖" },
-  { label: "Englisch PSA10",  keyword: "英語版 PSA10鑑定済", icon: "🇺🇸" },
-  { label: "BOX unopened",    keyword: "未開封",              icon: "📦" },
-  { label: "Promos",          keyword: "プロモ",              icon: "⭐" },
+  { label: "PSA 10",              keyword: "PSA10鑑定済",         icon: "🥇" },
+  { label: "PSA 9",               keyword: "PSA9鑑定済",          icon: "🥈" },
+  { label: "BGS",                 keyword: "BGS",                 icon: "💎" },
+  { label: "CGC",                 keyword: "CGC鑑定済",           icon: "🔖" },
+  { label: "Promos",              keyword: "プロモ",               icon: "⭐" },
+  { label: "Promos PSA 10",       keyword: "プロモ PSA10鑑定済",  icon: "⭐" },
+  { label: "Promos Graded (alle)",keyword: "プロモ 鑑定済",       icon: "⭐" },
+  { label: "Englisch PSA 10",     keyword: "英語版 PSA10鑑定済",  icon: "🇺🇸" },
+  { label: "BOX unopened",        keyword: "未開封",               icon: "📦" },
 ];
 
 async function getScannerCategories() {
