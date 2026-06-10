@@ -761,55 +761,56 @@ async function checkWatchedProduct(item) {
 
 // ── Check ─────────────────────────────────────────────────────────────────────
 async function runCheck() {
-  const watchlist = (await dbGet("watchlist")) || [];
-  if (!watchlist.length) return;
   const now = Date.now();
-  const updated = await Promise.all(watchlist.map(checkWatchedProduct));
-  const newRestocks = [], newPriceChanges = [];
+  const watchlist = (await dbGet("watchlist")) || [];
 
-  for (let i = 0; i < updated.length; i++) {
-    const item = updated[i];
-    const prev = watchlist[i];
+  if (watchlist.length > 0) {
+    const updated = await Promise.all(watchlist.map(checkWatchedProduct));
+    const newRestocks = [], newPriceChanges = [];
 
-    if (!prev.inStock && item.inStock) newRestocks.push(item);
+    for (let i = 0; i < updated.length; i++) {
+      const item = updated[i];
+      const prev = watchlist[i];
 
-    if (prev.price && item.price && prev.price !== item.price) {
-      newPriceChanges.push({ ...item, oldPrice: prev.price, priceChangedAt: now });
-    }
+      if (!prev.inStock && item.inStock) newRestocks.push(item);
 
-    // Save price history
-    if (item.price) {
-      const histKey = "history:" + encodeURIComponent(item.url);
-      const hist = (await dbGet(histKey)) || [];
-      hist.push({ t: now, p: item.price });
-      await dbSet(histKey, hist.slice(-90)); // keep last 90 data points
-    }
-
-    // Price alarm check
-    if (item.priceAlarm && item.price && item.price < item.priceAlarm) {
-      if (!prev.alarmFired || prev.price !== item.price) {
-        updated[i] = { ...item, alarmFired: true };
-        if (Notification.permission === "granted") {
-          new Notification("🎯 CardRush – Preisalarm!", {
-            body: `${item.name}\n¥${item.price} (Ziel: unter ¥${item.priceAlarm})`,
-            icon: "./icons/icon192.png"
-          });
-        }
+      if (prev.price && item.price && prev.price !== item.price) {
+        newPriceChanges.push({ ...item, oldPrice: prev.price, priceChangedAt: now });
       }
-    } else if (updated[i].alarmFired && item.price >= (item.priceAlarm||0)) {
-      updated[i] = { ...item, alarmFired: false }; // reset when price rises again
+
+      if (item.price) {
+        const histKey = "history:" + encodeURIComponent(item.url);
+        const hist = (await dbGet(histKey)) || [];
+        hist.push({ t: now, p: item.price });
+        await dbSet(histKey, hist.slice(-90));
+      }
+
+      if (item.priceAlarm && item.price && item.price < item.priceAlarm) {
+        if (!prev.alarmFired || prev.price !== item.price) {
+          updated[i] = { ...item, alarmFired: true };
+          if (Notification.permission === "granted") {
+            new Notification("🎯 CardRush – Preisalarm!", {
+              body: `${item.name}\n¥${item.price} (Ziel: unter ¥${item.priceAlarm})`,
+              icon: "./icons/icon192.png"
+            });
+          }
+        }
+      } else if (updated[i].alarmFired && item.price >= (item.priceAlarm||0)) {
+        updated[i] = { ...item, alarmFired: false };
+      }
+    }
+
+    await dbSet("watchlist", updated);
+    if (newRestocks.length) {
+      const prev = (await dbGet("restockAlerts")) || [];
+      await dbSet("restockAlerts", [...newRestocks, ...prev].slice(0, 20));
+    }
+    if (newPriceChanges.length) {
+      const prev = (await dbGet("priceAlerts")) || [];
+      await dbSet("priceAlerts", [...newPriceChanges, ...prev].slice(0, 20));
     }
   }
 
-  await dbSet("watchlist", updated);
-  if (newRestocks.length) {
-    const prev = (await dbGet("restockAlerts")) || [];
-    await dbSet("restockAlerts", [...newRestocks, ...prev].slice(0, 20));
-  }
-  if (newPriceChanges.length) {
-    const prev = (await dbGet("priceAlerts")) || [];
-    await dbSet("priceAlerts", [...newPriceChanges, ...prev].slice(0, 20));
-  }
   await dbSet("lastCheck", now);
   await runScannerCheck();
   await loadState();
