@@ -752,7 +752,7 @@ function parseProductPage(html, url) {
 
 async function checkWatchedProduct(item) {
   try {
-    const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(item.url), { cache: "no-store" });
+    const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(item.url), { cache: "no-store" });
     const html = await res.text();
     const { name, price, inStock } = parseProductPage(html, item.url);
     return { ...item, name, price, inStock };
@@ -871,7 +871,7 @@ async function addWatch() {
   const btn = document.getElementById("add-btn");
   btn.disabled = true; btn.textContent = "…";
   try {
-    const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(url), { cache: "no-store" });
+    const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(url), { cache: "no-store" });
     const html = await res.text();
     const { name, price, inStock } = parseProductPage(html, url);
     const watchlist = (await dbGet("watchlist")) || [];
@@ -1180,7 +1180,7 @@ async function runScannerCheck() {
   for (const cat of active) {
     try {
       const url = "https://www.cardrush-op.jp/product-list?keyword=" + encodeURIComponent(cat.keyword);
-      const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(url), { cache: "no-store" });
+      const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(url), { cache: "no-store" });
       const html = await res.text();
 
       // Extract all product IDs visible on the listing page
@@ -1232,7 +1232,7 @@ async function runScannerCheck() {
     // Fetch names/prices for restocked items
     for (const item of newRestocks) {
       try {
-        const res = await fetch("https://corsproxy.io/?" + encodeURIComponent(item.url), { cache: "no-store" });
+        const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(item.url), { cache: "no-store" });
         const html = await res.text();
         const { name, price } = parseProductPage(html, item.url);
         const translated = await translateName(name);
