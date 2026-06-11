@@ -351,11 +351,7 @@ canvas#price-chart { width: 100% !important; height: 180px !important; }
         <button class="install-btn" id="install-btn">Installieren</button>
       </div>
       <div class="section">
-        <div class="section-title">Neue Produkte</div>
-        <div id="new-list"><div class="empty-state">Noch keine neuen Produkte</div></div>
-      </div>
-      <div class="section">
-        <div class="section-title">Wieder verfügbar</div>
+        <div class="section-title">Wieder verfügbar (Watchlist)</div>
         <div id="restock-list"><div class="empty-state">Keine Restocks</div></div>
       </div>
       <div class="section">
@@ -626,13 +622,6 @@ function renderList(id, items, fn, empty) {
   el.querySelectorAll("[data-alarm]").forEach(n => n.addEventListener("click", e => { e.stopPropagation(); openAlarmModal(n.dataset.alarm); }));
 }
 
-function newItemHtml(p) {
-  return `<div class="product-item" data-url="${esc(p.url)}">
-    <span class="product-dot"></span>
-    <span class="product-name">${esc(p.name)}</span>
-    <span class="product-tag tag-new">NEU</span>
-  </div>`;
-}
 function restockItemHtml(p) {
   return `<div class="product-item" data-url="${esc(p.url)}">
     <span class="product-dot green"></span>
@@ -709,14 +698,13 @@ function applyFilterSort(watchlist) {
 
 // ── Load state ────────────────────────────────────────────────────────────────
 async function loadState() {
-  const [newItems, restocks, priceAlerts, watchlist, lastCheck, interval] = await Promise.all([
-    dbGet("recentNew"), dbGet("restockAlerts"), dbGet("priceAlerts"),
+  const [restocks, priceAlerts, watchlist, lastCheck, interval] = await Promise.all([
+    dbGet("restockAlerts"), dbGet("priceAlerts"),
     dbGet("watchlist"), dbGet("lastCheck"), dbGet("interval")
   ]);
 
   document.getElementById("last-check").textContent = timeAgo(lastCheck);
 
-  renderList("new-list",     newItems    || [], newItemHtml,     "Noch keine neuen Produkte");
   renderList("restock-list", restocks    || [], restockItemHtml, "Keine Restocks");
   renderList("price-list",   priceAlerts || [], priceItemHtml,   "Keine Preisänderungen");
 
@@ -728,7 +716,7 @@ async function loadState() {
   document.getElementById("watch-count").textContent =
     total === shown ? `Beobachtete Produkte (${total})` : `Beobachtete Produkte (${shown} von ${total})`;
 
-  const alertTotal = (newItems||[]).length + (restocks||[]).length + (priceAlerts||[]).length;
+  const alertTotal = (restocks||[]).length + (priceAlerts||[]).length;
   const ba = document.getElementById("badge-alerts");
   ba.textContent = alertTotal; ba.style.display = alertTotal > 0 ? "inline-flex" : "none";
 
@@ -742,11 +730,25 @@ async function loadState() {
 
 // ── Product page parser ───────────────────────────────────────────────────────
 function parseProductPage(html, url) {
-  const priceMatch = html.match(/product:price:amount[^>]+content="(\d+)"/);
-  const price = priceMatch ? parseInt(priceMatch[1]) : null;
+  // Try multiple price patterns for robustness
+  let price = null;
+  const patterns = [
+    /product:price:amount[^>]+content="(\d+)"/,        // OpenGraph meta
+    /"price"\s*:\s*"?(\d+)"?/,                          // JSON-LD / structured data
+    /class="[^"]*price[^"]*"[^>]*>[^\d]*?([\d,]+)\s*円/i, // Visible price with 円
+    /([\d,]+)\s*円/                                      // Any "NNNN 円" as last resort
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m) {
+      price = parseInt(m[1].replace(/,/g, ""));
+      if (price > 0) break;
+    }
+  }
+
   const titleMatch = html.match(/<title>([^<]+)<\/title>/);
-  const name = titleMatch ? titleMatch[1].replace(/ - カードラッシュ ワンピース/, "").trim() : url;
-  const soldOut = /売り切れ|在庫なし|soldout|sold.out|入荷待ち/i.test(html) || price === null || price === 0;
+  const name = titleMatch ? titleMatch[1].replace(/ - カードラッシュ ワンピース/, "").replace(/｜.*$/, "").trim() : url;
+  const soldOut = /売り切れ|在庫なし|sold\s*out|入荷待ち|品切れ/i.test(html) || !price;
   return { name, price, inStock: !soldOut };
 }
 
@@ -786,7 +788,8 @@ async function runCheck() {
       }
 
       if (item.priceAlarm && item.price && item.price < item.priceAlarm) {
-        if (!prev.alarmFired || prev.price !== item.price) {
+        if (!prev.alarmFired) {
+          // Fire only on first crossing below threshold
           updated[i] = { ...item, alarmFired: true };
           if (Notification.permission === "granted") {
             new Notification("🎯 CardRush – Preisalarm!", {
@@ -794,8 +797,11 @@ async function runCheck() {
               icon: "./icons/icon192.png"
             });
           }
+        } else {
+          updated[i] = { ...item, alarmFired: true };
         }
-      } else if (updated[i].alarmFired && item.price >= (item.priceAlarm||0)) {
+      } else if (item.priceAlarm && item.price && item.price >= item.priceAlarm) {
+        // Price back above threshold → reset so alarm can fire again next time
         updated[i] = { ...item, alarmFired: false };
       }
     }
@@ -941,32 +947,33 @@ document.getElementById("notif-btn2").addEventListener("click", requestNotif);
 
 // ── Clear / Reset ─────────────────────────────────────────────────────────────
 document.getElementById("clear-btn").addEventListener("click", async () => {
-  await dbSet("recentNew", []); await dbSet("restockAlerts", []); await dbSet("priceAlerts", []); await dbSet("scannerNew", []);
+  await dbSet("restockAlerts", []); await dbSet("priceAlerts", []); await dbSet("scannerNew", []);
   await loadState(); renderScannerNewList();
 });
 document.getElementById("reset-btn").addEventListener("click", async () => {
   if (!confirm("Alle gespeicherten Daten (Watchlist, Alerts) löschen?")) return;
-  await Promise.all(["recentNew","restockAlerts","priceAlerts","watchlist","lastCheck","scannerNew","scannerProducts"].map(k => dbSet(k, null)));
+  await Promise.all(["restockAlerts","priceAlerts","watchlist","lastCheck","scannerNew","scannerProducts"].map(k => dbSet(k, null)));
   await loadState();
 });
 
 // ── Service Worker ────────────────────────────────────────────────────────────
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").then(reg => {
-    console.log("SW registered");
-    // Periodic sync if supported
-    if ("periodicSync" in reg) {
-      navigator.permissions.query({ name: "periodic-background-sync" }).then(status => {
-        if (status.state === "granted") {
-          reg.periodicSync.register("cardrush-check", { minInterval: 15 * 60 * 1000 });
-        }
-      });
-    }
-  });
-  navigator.serviceWorker.addEventListener("message", e => {
-    if (e.data?.action === "checkDone") loadState();
-  });
+  navigator.serviceWorker.register("./sw.js").catch(err => console.log("SW registration failed:", err));
 }
+
+// ── Re-check when app regains focus (covers most "background" needs) ──────────
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    dbGet("lastCheck").then(ts => {
+      // Auto-check if last check was more than 10 minutes ago
+      if (!ts || Date.now() - ts > 10 * 60 * 1000) {
+        runCheck();
+      } else {
+        loadState();
+      }
+    });
+  }
+});
 
 // ── Install prompt ────────────────────────────────────────────────────────────
 let deferredPrompt;
@@ -1172,58 +1179,75 @@ async function runScannerCheck() {
   const active = cats.filter(c => c.on);
   if (!active.length) return;
 
-  // scannerProducts: { [productId]: { url, name, price, inStock, category } }
+  // scannerProducts: { [productId]: { url, name, price, inStock, category, lastSeen } }
   const scannerProducts = (await dbGet("scannerProducts")) || {};
   const scannerRestocks = (await dbGet("scannerNew")) || [];
   const newRestocks = [];
+  const now = Date.now();
 
   for (const cat of active) {
     try {
-      const url = "https://www.cardrush-op.jp/product-list?keyword=" + encodeURIComponent(cat.keyword);
-      const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(url), { cache: "no-store" });
-      const html = await res.text();
-
-      // Extract all product IDs visible on the listing page
-      const ids = [...new Set([...html.matchAll(/href="\/(?:phone\/)?product\/(\d+)"/g)].map(m => m[1]))];
-
-      // Products currently visible on listing = inStock (sold-out items disappear from listings)
-      const visibleIds = new Set(ids);
-
-      // Check each known product in this category: was it sold out, now visible again?
-      for (const [id, prev] of Object.entries(scannerProducts)) {
-        if (prev.category !== cat.id) continue;
-        const nowInStock = visibleIds.has(id);
-        if (!prev.inStock && nowInStock) {
-          // Restock detected!
-          newRestocks.push({ ...prev, inStock: true, restockAt: Date.now() });
-        }
-        scannerProducts[id] = { ...prev, inStock: nowInStock };
+      // Fetch first 2 pages to reduce pagination false-positives
+      const visibleIds = new Set();
+      for (let page = 1; page <= 2; page++) {
+        const listUrl = "https://www.cardrush-op.jp/product-list?keyword=" + encodeURIComponent(cat.keyword) + (page > 1 ? "&page=" + page : "");
+        const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(listUrl), { cache: "no-store" });
+        const html = await res.text();
+        const ids = [...new Set([...html.matchAll(/href="\/(?:phone\/)?product\/(\d+)"/g)].map(m => m[1]))];
+        ids.forEach(id => visibleIds.add(id));
+        if (ids.length === 0) break; // no more pages
       }
 
-      // Register newly seen products (first time we see them — no alert, just baseline)
-      for (const id of ids) {
+      // Register newly seen products as baseline (first scan = no alert)
+      for (const id of visibleIds) {
         if (!scannerProducts[id]) {
-          const productUrl = "https://www.cardrush-op.jp/product/" + id;
           scannerProducts[id] = {
-            url: productUrl,
+            url: "https://www.cardrush-op.jp/product/" + id,
             name: cat.label + " #" + id,
             price: null,
             inStock: true,
             category: cat.id,
             categoryLabel: cat.label,
-            firstSeen: Date.now()
+            firstSeen: now,
+            lastSeen: now
           };
+        } else {
+          // Currently visible → in stock, update lastSeen
+          const prev = scannerProducts[id];
+          if (!prev.inStock) {
+            // Was marked sold out, now visible again → RESTOCK
+            newRestocks.push({ ...prev, inStock: true, restockAt: now });
+          }
+          scannerProducts[id] = { ...prev, inStock: true, lastSeen: now };
         }
       }
 
-      // Mark products NOT on listing as sold out
-      for (const [id, prod] of Object.entries(scannerProducts)) {
-        if (prod.category === cat.id && !visibleIds.has(id)) {
-          scannerProducts[id] = { ...prod, inStock: false };
+      // Products in this category NOT currently visible: verify via product page
+      // (avoids false "sold out" from pagination/sorting). Only check ones we still think are in stock.
+      const toVerify = Object.entries(scannerProducts)
+        .filter(([id, prod]) => prod.category === cat.id && prod.inStock && !visibleIds.has(id));
+
+      for (const [id, prod] of toVerify) {
+        try {
+          const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(prod.url), { cache: "no-store" });
+          const html = await res.text();
+          const parsed = parseProductPage(html, prod.url);
+          // Only mark sold out if the product page actually confirms it
+          scannerProducts[id] = { ...prod, inStock: parsed.inStock };
+        } catch {
+          // On error, keep previous status (don't assume sold out)
         }
       }
 
     } catch { /* ignore fetch errors */ }
+  }
+
+  // Cleanup: remove products not seen for 30 days to prevent unlimited growth
+  const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+  for (const [id, prod] of Object.entries(scannerProducts)) {
+    if (prod.lastSeen && (now - prod.lastSeen) > THIRTY_DAYS && !prod.inStock) {
+      delete scannerProducts[id];
+    }
   }
 
   await dbSet("scannerProducts", scannerProducts);
@@ -1238,7 +1262,6 @@ async function runScannerCheck() {
         const translated = await translateName(name);
         item.name = translated;
         item.price = price;
-        // Update in scannerProducts too
         const id = item.url.split("/").pop();
         if (scannerProducts[id]) scannerProducts[id] = { ...scannerProducts[id], name: translated, price };
       } catch {}
