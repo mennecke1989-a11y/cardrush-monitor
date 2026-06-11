@@ -391,10 +391,10 @@ canvas#price-chart { width: 100% !important; height: 180px !important; }
         <button class="action-btn" id="add-category-btn" style="margin-top:10px;width:100%">＋ Kategorie hinzufügen</button>
       </div>
       <div class="section">
-        <div class="section-title">Wieder verfügbar <span id="scanner-new-count"></span></div>
+        <div class="section-title">Neu &amp; wieder verfügbar <span id="scanner-new-count"></span></div>
         <div id="scanner-new-list"><div class="empty-state">Noch nichts gefunden</div></div>
       </div>
-      <div class="hint">Der Scanner prüft die Kategorien beim normalen Check-Intervall und meldet Produkte die noch nie gesehen wurden.</div>
+      <div class="hint">Der Scanner prüft die Kategorien beim Check-Intervall und meldet sowohl neue Produkte als auch Karten die wieder verfügbar sind. Beim ersten Scan einer Kategorie wird nur die Baseline gespeichert (keine Meldung).</div>
     </div>
 
     <!-- LINKS TAB -->
@@ -1097,14 +1097,16 @@ document.getElementById("alarm-clear-btn").addEventListener("click", async () =>
 const DEFAULT_CATEGORIES = [
   { id: "psa10",       label: "PSA 10",              icon: "🥇", keyword: "PSA10鑑定済",          on: true  },
   { id: "psa9",        label: "PSA 9",               icon: "🥈", keyword: "PSA9鑑定済",           on: false },
-  { id: "bgs",         label: "BGS Beckett",         icon: "💎", keyword: "BGS",                  on: false },
-  { id: "cgc",         label: "CGC",                 icon: "🔖", keyword: "CGC鑑定済",            on: false },
+  { id: "bgs",         label: "BGS Beckett",         icon: "💎", keyword: "BGS",                  on: true  },
+  { id: "cgc",         label: "CGC",                 icon: "🔖", keyword: "CGC鑑定済",            on: true  },
   { id: "promo",       label: "Promos",              icon: "⭐", keyword: "プロモ",                on: true  },
   { id: "promo_psa10", label: "Promos PSA 10",       icon: "⭐", keyword: "プロモ PSA10鑑定済",   on: true  },
   { id: "promo_graded",label: "Promos Graded (alle)",icon: "⭐", keyword: "プロモ 鑑定済",        on: false },
+  { id: "en",          label: "Englisch",            icon: "🇺🇸", keyword: "英語版",               on: true  },
+  { id: "en_graded",   label: "Englisch Graded",     icon: "🇺🇸", keyword: "英語版 鑑定済",       on: true  },
+  { id: "cn",          label: "Chinesisch",          icon: "🇨🇳", keyword: "中国版",               on: true  },
+  { id: "cn_graded",   label: "Chinesisch Graded",   icon: "🇨🇳", keyword: "中国版 鑑定済",       on: true  },
   { id: "box",         label: "BOX (unopened)",      icon: "📦", keyword: "未開封",                on: false },
-  { id: "en",          label: "Englisch",            icon: "🇺🇸", keyword: "英語版",               on: false },
-  { id: "en10",        label: "Englisch PSA 10",     icon: "🇺🇸", keyword: "英語版 PSA10鑑定済",  on: false },
 ];
 
 const CATEGORY_PRESETS = [
@@ -1115,7 +1117,12 @@ const CATEGORY_PRESETS = [
   { label: "Promos",              keyword: "プロモ",               icon: "⭐" },
   { label: "Promos PSA 10",       keyword: "プロモ PSA10鑑定済",  icon: "⭐" },
   { label: "Promos Graded (alle)",keyword: "プロモ 鑑定済",       icon: "⭐" },
+  { label: "Englisch",            keyword: "英語版",               icon: "🇺🇸" },
+  { label: "Englisch Graded",     keyword: "英語版 鑑定済",       icon: "🇺🇸" },
   { label: "Englisch PSA 10",     keyword: "英語版 PSA10鑑定済",  icon: "🇺🇸" },
+  { label: "Chinesisch",          keyword: "中国版",               icon: "🇨🇳" },
+  { label: "Chinesisch Graded",   keyword: "中国版 鑑定済",       icon: "🇨🇳" },
+  { label: "Chinesisch PSA 10",   keyword: "中国版 PSA10鑑定済",  icon: "🇨🇳" },
   { label: "BOX unopened",        keyword: "未開封",               icon: "📦" },
 ];
 
@@ -1160,12 +1167,15 @@ async function renderScannerNewList() {
   const countEl = document.getElementById("scanner-new-count");
   countEl.textContent = items.length ? `(${items.length})` : "";
   el.innerHTML = items.length
-    ? items.map(p => `<div class="product-item" data-url="${esc(p.url)}">
+    ? items.map(p => {
+        const isNew = p.alertType === "new";
+        return `<div class="product-item" data-url="${esc(p.url)}">
         <span class="product-dot green"></span>
         <span class="product-name">${esc(p.name)}</span>
         ${p.price ? `<span class="price-badge">¥${p.price}</span>` : ""}
-        <span class="product-tag tag-restock">RESTOCK</span>
-      </div>`).join("")
+        <span class="product-tag ${isNew ? "tag-new" : "tag-restock"}">${isNew ? "NEU" : "RESTOCK"}</span>
+      </div>`;
+      }).join("")
     : `<div class="empty-state">Noch nichts gefunden</div>`;
   el.querySelectorAll("[data-url]").forEach(n => n.addEventListener("click", () => window.open(n.dataset.url, "_blank")));
 
@@ -1182,11 +1192,15 @@ async function runScannerCheck() {
   // scannerProducts: { [productId]: { url, name, price, inStock, category, lastSeen } }
   const scannerProducts = (await dbGet("scannerProducts")) || {};
   const scannerRestocks = (await dbGet("scannerNew")) || [];
-  const newRestocks = [];
+  const newRestocks = [];   // restocks (was sold out, now back)
+  const brandNew = [];      // products never seen before
   const now = Date.now();
 
   for (const cat of active) {
     try {
+      // Does this category already have a baseline? (avoids alert-flood on first scan)
+      const hasBaseline = Object.values(scannerProducts).some(p => p.category === cat.id);
+
       // Fetch first 2 pages to reduce pagination false-positives
       const visibleIds = new Set();
       for (let page = 1; page <= 2; page++) {
@@ -1198,10 +1212,10 @@ async function runScannerCheck() {
         if (ids.length === 0) break; // no more pages
       }
 
-      // Register newly seen products as baseline (first scan = no alert)
       for (const id of visibleIds) {
         if (!scannerProducts[id]) {
-          scannerProducts[id] = {
+          // First time we see this product
+          const entry = {
             url: "https://www.cardrush-op.jp/product/" + id,
             name: cat.label + " #" + id,
             price: null,
@@ -1211,8 +1225,10 @@ async function runScannerCheck() {
             firstSeen: now,
             lastSeen: now
           };
+          scannerProducts[id] = entry;
+          // Only alert as "new" if the category already had a baseline
+          if (hasBaseline) brandNew.push({ ...entry, isNew: true });
         } else {
-          // Currently visible → in stock, update lastSeen
           const prev = scannerProducts[id];
           if (!prev.inStock) {
             // Was marked sold out, now visible again → RESTOCK
@@ -1252,9 +1268,15 @@ async function runScannerCheck() {
 
   await dbSet("scannerProducts", scannerProducts);
 
-  if (newRestocks.length > 0) {
-    // Fetch names/prices for restocked items
-    for (const item of newRestocks) {
+  // Combine restocks + brand new products
+  const allAlerts = [
+    ...newRestocks.map(x => ({ ...x, alertType: "restock" })),
+    ...brandNew.map(x => ({ ...x, alertType: "new" }))
+  ];
+
+  if (allAlerts.length > 0) {
+    // Fetch names/prices for all alerted items
+    for (const item of allAlerts) {
       try {
         const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(item.url), { cache: "no-store" });
         const html = await res.text();
@@ -1268,15 +1290,19 @@ async function runScannerCheck() {
     }
     await dbSet("scannerProducts", scannerProducts);
 
-    const merged = [...newRestocks, ...scannerRestocks].slice(0, 50);
+    const merged = [...allAlerts, ...scannerRestocks].slice(0, 50);
     await dbSet("scannerNew", merged);
 
     if (Notification.permission === "granted") {
-      newRestocks.forEach(item => {
-        new Notification("✅ CardRush – Wieder verfügbar!", {
-          body: `${item.name}${item.price ? " · ¥" + item.price : ""}\nKategorie: ${item.categoryLabel}`,
-          icon: "./icons/icon192.png"
-        });
+      allAlerts.forEach(item => {
+        const isNew = item.alertType === "new";
+        new Notification(
+          isNew ? "🆕 CardRush – Neues Produkt!" : "✅ CardRush – Wieder verfügbar!",
+          {
+            body: `${item.name}${item.price ? " · ¥" + item.price : ""}\nKategorie: ${item.categoryLabel}`,
+            icon: "./icons/icon192.png"
+          }
+        );
       });
     }
   }
