@@ -396,7 +396,8 @@ canvas#price-chart { width: 100% !important; height: 180px !important; }
       </div>
       <div class="section">
         <div class="section-title">Test &amp; Diagnose</div>
-        <button class="action-btn" id="scanner-test-btn" style="width:100%">🔍 Scanner jetzt testen (zeigt Treffer)</button>
+        <button class="action-btn" id="scanner-test-btn" style="width:100%">🔍 Scanner-Diagnose</button>
+        <button class="action-btn" id="scanner-rescan-btn" style="width:100%;margin-top:8px">🔄 Baseline zurücksetzen &amp; neu scannen</button>
         <div id="scanner-test-result" style="margin-top:10px;font-size:12px;color:var(--muted2)"></div>
       </div>
       <div class="section">
@@ -1235,7 +1236,7 @@ async function runScannerCheck() {
         const listUrl = "https://www.cardrush-op.jp/product-list?keyword=" + encodeURIComponent(cat.keyword) + (page > 1 ? "&page=" + page : "");
         const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(listUrl), { cache: "no-store" });
         const html = await res.text();
-        const ids = [...new Set([...html.matchAll(/href="\/(?:phone\/)?product\/(\d+)"/g)].map(m => m[1]))];
+        const ids = [...new Set([...html.matchAll(/\/product\/(\d+)/g)].map(m => m[1]))];
         ids.forEach(id => visibleIds.add(id));
         if (ids.length === 0) break; // no more pages
       }
@@ -1413,6 +1414,79 @@ document.getElementById("scanner-test-btn").addEventListener("click", async () =
 
   out.innerHTML = lines.join("<br>");
   btn.disabled = false; btn.textContent = "🔍 Scanner-Diagnose";
+});
+
+// ── Baseline zurücksetzen & alles als neu anzeigen ────────────────────────────
+document.getElementById("scanner-rescan-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("scanner-rescan-btn");
+  const out = document.getElementById("scanner-test-result");
+  btn.disabled = true; btn.textContent = "Scanne…";
+  out.innerHTML = "Lade alle aktuell verfügbaren Produkte…<br>";
+
+  const cats = await getScannerCategories();
+  const active = cats.filter(c => c.on);
+  if (!active.length) {
+    out.innerHTML = "⚠️ Keine Kategorie aktiv.";
+    btn.disabled = false; btn.textContent = "🔄 Baseline zurücksetzen & neu scannen";
+    return;
+  }
+
+  const PROXY = "https://cardrush-proxy.mennecke1989.workers.dev/?url=";
+  const scannerProducts = {};
+  const found = [];
+  const now = Date.now();
+
+  for (const cat of active) {
+    try {
+      const visibleIds = new Set();
+      for (let page = 1; page <= 2; page++) {
+        const listUrl = "https://www.cardrush-op.jp/product-list?keyword=" + encodeURIComponent(cat.keyword) + (page > 1 ? "&page=" + page : "");
+        const res = await fetch(PROXY + encodeURIComponent(listUrl), { cache: "no-store" });
+        const html = await res.text();
+        const ids = [...new Set([...html.matchAll(/\/product\/(\d+)/g)].map(m => m[1]))];
+        ids.forEach(id => visibleIds.add(id));
+        if (ids.length === 0) break;
+      }
+      for (const id of visibleIds) {
+        if (!scannerProducts[id]) {
+          const entry = {
+            url: "https://www.cardrush-op.jp/product/" + id,
+            name: cat.label + " #" + id, price: null, inStock: true,
+            category: cat.id, categoryLabel: cat.label, firstSeen: now, lastSeen: now
+          };
+          scannerProducts[id] = entry;
+          found.push({ ...entry, alertType: "new" });
+        }
+      }
+      out.innerHTML += `✅ ${cat.label}: ${visibleIds.size} Produkte<br>`;
+    } catch (e) {
+      out.innerHTML += `❌ ${cat.label}: ${e.message}<br>`;
+    }
+  }
+
+  // Save new baseline
+  await dbSet("scannerProducts", scannerProducts);
+
+  // Show first 50 as "found", translate names
+  out.innerHTML += `<br>Übersetze ${Math.min(found.length, 50)} Namen…`;
+  const toShow = found.slice(0, 50);
+  for (const item of toShow) {
+    try {
+      const res = await fetch(PROXY + encodeURIComponent(item.url), { cache: "no-store" });
+      const html = await res.text();
+      const { name, price } = parseProductPage(html, item.url);
+      item.name = await translateName(name);
+      item.price = price;
+      const id = item.url.split("/").pop();
+      if (scannerProducts[id]) scannerProducts[id] = { ...scannerProducts[id], name: item.name, price };
+    } catch {}
+  }
+  await dbSet("scannerProducts", scannerProducts);
+  await dbSet("scannerNew", toShow.slice(0, 50));
+  await renderScannerNewList();
+
+  out.innerHTML += `<br><br>✅ Fertig! ${found.length} Produkte gefunden, ${toShow.length} werden unten angezeigt. Ab jetzt meldet der Scanner nur noch Änderungen.`;
+  btn.disabled = false; btn.textContent = "🔄 Baseline zurücksetzen & neu scannen";
 });
 
 // ── Share Target ───────────────────────────────────────────────────────────────
