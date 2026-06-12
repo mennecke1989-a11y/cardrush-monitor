@@ -351,6 +351,10 @@ canvas#price-chart { width: 100% !important; height: 180px !important; }
         <button class="install-btn" id="install-btn">Installieren</button>
       </div>
       <div class="section">
+        <div class="section-title">🆕 Neu &amp; wieder verfügbar (Scanner) <span id="alerts-scanner-count"></span></div>
+        <div id="alerts-scanner-list"><div class="empty-state">Noch nichts gefunden – Scanner-Kategorien im Scanner-Tab aktivieren</div></div>
+      </div>
+      <div class="section">
         <div class="section-title">Wieder verfügbar (Watchlist)</div>
         <div id="restock-list"><div class="empty-state">Keine Restocks</div></div>
       </div>
@@ -389,6 +393,11 @@ canvas#price-chart { width: 100% !important; height: 180px !important; }
         <div class="section-title">Überwachte Kategorien</div>
         <div id="scanner-categories"></div>
         <button class="action-btn" id="add-category-btn" style="margin-top:10px;width:100%">＋ Kategorie hinzufügen</button>
+      </div>
+      <div class="section">
+        <div class="section-title">Test &amp; Diagnose</div>
+        <button class="action-btn" id="scanner-test-btn" style="width:100%">🔍 Scanner jetzt testen (zeigt Treffer)</button>
+        <div id="scanner-test-result" style="margin-top:10px;font-size:12px;color:var(--muted2)"></div>
       </div>
       <div class="section">
         <div class="section-title">Neu &amp; wieder verfügbar <span id="scanner-new-count"></span></div>
@@ -716,7 +725,8 @@ async function loadState() {
   document.getElementById("watch-count").textContent =
     total === shown ? `Beobachtete Produkte (${total})` : `Beobachtete Produkte (${shown} von ${total})`;
 
-  const alertTotal = (restocks||[]).length + (priceAlerts||[]).length;
+  const scannerItems = (await dbGet("scannerNew")) || [];
+  const alertTotal = (restocks||[]).length + (priceAlerts||[]).length + scannerItems.length;
   const ba = document.getElementById("badge-alerts");
   ba.textContent = alertTotal; ba.style.display = alertTotal > 0 ? "inline-flex" : "none";
 
@@ -726,6 +736,7 @@ async function loadState() {
 
   if (interval) document.getElementById("interval-select").value = String(interval);
   updateNotifStatus();
+  await renderScannerNewList();
 }
 
 // ── Product page parser ───────────────────────────────────────────────────────
@@ -1161,23 +1172,40 @@ async function renderScannerCategories() {
   }));
 }
 
+function scannerItemHtml(p) {
+  const isNew = p.alertType === "new";
+  return `<div class="product-item" data-url="${esc(p.url)}">
+    <span class="product-dot green"></span>
+    <span class="product-name">${esc(p.name)}</span>
+    ${p.price ? `<span class="price-badge">¥${p.price}</span>` : ""}
+    <span class="product-tag ${isNew ? "tag-new" : "tag-restock"}">${isNew ? "NEU" : "RESTOCK"}</span>
+  </div>`;
+}
+
 async function renderScannerNewList() {
   const items = (await dbGet("scannerNew")) || [];
+
+  // Render in Scanner tab
   const el = document.getElementById("scanner-new-list");
   const countEl = document.getElementById("scanner-new-count");
-  countEl.textContent = items.length ? `(${items.length})` : "";
-  el.innerHTML = items.length
-    ? items.map(p => {
-        const isNew = p.alertType === "new";
-        return `<div class="product-item" data-url="${esc(p.url)}">
-        <span class="product-dot green"></span>
-        <span class="product-name">${esc(p.name)}</span>
-        ${p.price ? `<span class="price-badge">¥${p.price}</span>` : ""}
-        <span class="product-tag ${isNew ? "tag-new" : "tag-restock"}">${isNew ? "NEU" : "RESTOCK"}</span>
-      </div>`;
-      }).join("")
-    : `<div class="empty-state">Noch nichts gefunden</div>`;
-  el.querySelectorAll("[data-url]").forEach(n => n.addEventListener("click", () => window.open(n.dataset.url, "_blank")));
+  if (countEl) countEl.textContent = items.length ? `(${items.length})` : "";
+  if (el) {
+    el.innerHTML = items.length
+      ? items.map(scannerItemHtml).join("")
+      : `<div class="empty-state">Noch nichts gefunden</div>`;
+    el.querySelectorAll("[data-url]").forEach(n => n.addEventListener("click", () => window.open(n.dataset.url, "_blank")));
+  }
+
+  // Render in Alerts tab (mirror)
+  const elA = document.getElementById("alerts-scanner-list");
+  const countA = document.getElementById("alerts-scanner-count");
+  if (countA) countA.textContent = items.length ? `(${items.length})` : "";
+  if (elA) {
+    elA.innerHTML = items.length
+      ? items.map(scannerItemHtml).join("")
+      : `<div class="empty-state">Noch nichts gefunden – Scanner-Kategorien im Scanner-Tab aktivieren</div>`;
+    elA.querySelectorAll("[data-url]").forEach(n => n.addEventListener("click", () => window.open(n.dataset.url, "_blank")));
+  }
 
   const badge = document.getElementById("badge-scanner");
   badge.textContent = items.length;
@@ -1337,6 +1365,47 @@ document.getElementById("category-save").addEventListener("click", async () => {
   document.getElementById("category-label").value = "";
   document.getElementById("category-modal").classList.remove("open");
   renderScannerCategories();
+});
+
+// ── Scanner Test / Diagnose ───────────────────────────────────────────────────
+document.getElementById("scanner-test-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("scanner-test-btn");
+  const out = document.getElementById("scanner-test-result");
+  btn.disabled = true; btn.textContent = "Teste…";
+  out.innerHTML = "";
+
+  const cats = await getScannerCategories();
+  const active = cats.filter(c => c.on);
+  if (!active.length) {
+    out.innerHTML = "⚠️ Keine Kategorie aktiv. Schalte oben mindestens eine ein.";
+    btn.disabled = false; btn.textContent = "🔍 Scanner jetzt testen (zeigt Treffer)";
+    return;
+  }
+
+  const lines = [];
+  for (const cat of active) {
+    try {
+      const listUrl = "https://www.cardrush-op.jp/product-list?keyword=" + encodeURIComponent(cat.keyword);
+      const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(listUrl), { cache: "no-store" });
+      if (!res.ok) {
+        lines.push(`❌ ${cat.label}: HTTP ${res.status}`);
+        continue;
+      }
+      const html = await res.text();
+      const ids = [...new Set([...html.matchAll(/href="\/(?:phone\/)?product\/(\d+)"/g)].map(m => m[1]))];
+      if (ids.length === 0) {
+        // Try to detect why: empty result or parsing issue
+        const hasNoResult = /該当する商品がございません|0件|見つかりませんでした/.test(html);
+        lines.push(`⚠️ ${cat.label}: 0 Produkte ${hasNoResult ? "(Suche leer)" : "(evtl. Parsing-Problem, HTML " + Math.round(html.length/1024) + "KB)"}`);
+      } else {
+        lines.push(`✅ ${cat.label}: ${ids.length} Produkte gefunden`);
+      }
+    } catch (e) {
+      lines.push(`❌ ${cat.label}: Fehler (${e.message})`);
+    }
+  }
+  out.innerHTML = lines.join("<br>");
+  btn.disabled = false; btn.textContent = "🔍 Scanner jetzt testen (zeigt Treffer)";
 });
 
 // ── Share Target ───────────────────────────────────────────────────────────────
