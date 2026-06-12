@@ -1372,40 +1372,47 @@ document.getElementById("scanner-test-btn").addEventListener("click", async () =
   const btn = document.getElementById("scanner-test-btn");
   const out = document.getElementById("scanner-test-result");
   btn.disabled = true; btn.textContent = "Teste…";
-  out.innerHTML = "";
+  out.innerHTML = "Teste verschiedene URL-Formate…<br>";
 
-  const cats = await getScannerCategories();
-  const active = cats.filter(c => c.on);
-  if (!active.length) {
-    out.innerHTML = "⚠️ Keine Kategorie aktiv. Schalte oben mindestens eine ein.";
-    btn.disabled = false; btn.textContent = "🔍 Scanner jetzt testen (zeigt Treffer)";
-    return;
-  }
+  const PROXY = "https://cardrush-proxy.mennecke1989.workers.dev/?url=";
+  const kw = "英語版"; // englische Karten als Test
+
+  // Different URL formats cardrush might use
+  const testUrls = [
+    ["product-list?keyword", "https://www.cardrush-op.jp/product-list?keyword=" + encodeURIComponent(kw)],
+    ["products/list?name",   "https://www.cardrush-op.jp/products/list?name=" + encodeURIComponent(kw)],
+    ["search?keyword",       "https://www.cardrush-op.jp/search?keyword=" + encodeURIComponent(kw)],
+    ["?mode=srh&keyword",    "https://www.cardrush-op.jp/?mode=srh&keyword=" + encodeURIComponent(kw)],
+    ["product-list/keyword", "https://www.cardrush-op.jp/product-list/" + encodeURIComponent(kw)],
+  ];
 
   const lines = [];
-  for (const cat of active) {
+  for (const [label, url] of testUrls) {
     try {
-      const listUrl = "https://www.cardrush-op.jp/product-list?keyword=" + encodeURIComponent(cat.keyword);
-      const res = await fetch("https://cardrush-proxy.mennecke1989.workers.dev/?url=" + encodeURIComponent(listUrl), { cache: "no-store" });
-      if (!res.ok) {
-        lines.push(`❌ ${cat.label}: HTTP ${res.status}`);
-        continue;
-      }
+      const res = await fetch(PROXY + encodeURIComponent(url), { cache: "no-store" });
       const html = await res.text();
-      const ids = [...new Set([...html.matchAll(/href="\/(?:phone\/)?product\/(\d+)"/g)].map(m => m[1]))];
-      if (ids.length === 0) {
-        // Try to detect why: empty result or parsing issue
-        const hasNoResult = /該当する商品がございません|0件|見つかりませんでした/.test(html);
-        lines.push(`⚠️ ${cat.label}: 0 Produkte ${hasNoResult ? "(Suche leer)" : "(evtl. Parsing-Problem, HTML " + Math.round(html.length/1024) + "KB)"}`);
-      } else {
-        lines.push(`✅ ${cat.label}: ${ids.length} Produkte gefunden`);
-      }
+      const ids = [...new Set([...html.matchAll(/\/product\/(\d+)/g)].map(m => m[1]))];
+      const idsAlt = [...new Set([...html.matchAll(/product[_-]?id["'=\s:]+(\d+)/gi)].map(m => m[1]))];
+      const total = Math.max(ids.length, idsAlt.length);
+      lines.push(`${total > 0 ? "✅" : "⚠️"} ${label}: HTTP ${res.status}, ${total} IDs, ${Math.round(html.length/1024)}KB`);
     } catch (e) {
-      lines.push(`❌ ${cat.label}: Fehler (${e.message})`);
+      lines.push(`❌ ${label}: ${e.message}`);
     }
   }
+
+  // Also test the known product page directly
+  try {
+    const res = await fetch(PROXY + encodeURIComponent("https://www.cardrush-op.jp/product/13709"), { cache: "no-store" });
+    const html = await res.text();
+    const parsed = parseProductPage(html, "13709");
+    lines.push(`---`);
+    lines.push(`📄 Produkt 13709: HTTP ${res.status}, Preis: ${parsed.price||"?"}, ${parsed.inStock?"verfügbar":"ausverkauft"}, ${Math.round(html.length/1024)}KB`);
+  } catch (e) {
+    lines.push(`❌ Produkt 13709: ${e.message}`);
+  }
+
   out.innerHTML = lines.join("<br>");
-  btn.disabled = false; btn.textContent = "🔍 Scanner jetzt testen (zeigt Treffer)";
+  btn.disabled = false; btn.textContent = "🔍 Scanner-Diagnose";
 });
 
 // ── Share Target ───────────────────────────────────────────────────────────────
